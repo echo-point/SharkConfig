@@ -1,6 +1,6 @@
 # SharkConfig
 
-Configurador **não oficial** e leve para o mouse **Attack Shark X8 Ultra** no Windows.
+Configurador **não oficial** e leve para o mouse **Attack Shark X8 Ultra/Ultimate** no Windows.
 Interface inspirada no macOS e no Logitech G HUB, protocolo reconstruído por engenharia reversa
 (interoperabilidade) do software oficial.
 
