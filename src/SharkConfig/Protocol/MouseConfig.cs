@@ -206,25 +206,4 @@ public sealed class MouseConfig
         }
         return ops;
     }
-
-    /// <summary>Imagem padrão de fábrica (valores-padrão dos parsers do DLL).</summary>
-    public static FlashImage DefaultImage()
-    {
-        var img = new FlashImage();
-        var c = new MouseConfig
-        {
-            Buttons =
-            [
-                new(ButtonType.Mouse, 0x01, 0), new(ButtonType.Mouse, 0x02, 0), new(ButtonType.Mouse, 0x04, 0),
-                new(ButtonType.Mouse, 0x08, 0), new(ButtonType.Mouse, 0x10, 0), new(ButtonType.Dpi, 0x01, 0),
-            ]
-        };
-        var blank = new FlashImage();
-        var full = c.ApplyTo(blank);
-        // garante DPIs/botões gravados mesmo sem diferença com o "old" (blank é inválido)
-        for (int i = 0; i < 6; i++)
-            full.SetRecord(Flash.Button(i), [(byte)c.Buttons[i].Type, c.Buttons[i].P1, c.Buttons[i].P2]);
-        full.Data.CopyTo(img.Data, 0);
-        return img;
-    }
 }

@@ -23,7 +23,7 @@ public sealed class HostForm : Form
         "AutofillServerCommunication,OptimizationHints,Translate,MediaRouter,BackForwardCache " +
         "--js-flags=--max-old-space-size=48";
 
-    public HostForm(bool startSimulator, string? startPage)
+    public HostForm(string? startPage)
     {
         Text = "SharkConfig";
         BackColor = Base;
@@ -31,7 +31,7 @@ public sealed class HostForm : Form
         Size = new Size(1280, 800);
         StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(_web);
-        _query = $"?sim={(startSimulator ? 1 : 0)}&page={Uri.EscapeDataString(startPage ?? "overview")}";
+        _query = $"?page={Uri.EscapeDataString(startPage ?? "overview")}";
         Load += async (_, _) => await InitAsync();
         Resize += async (_, _) => await OnMinimizeChangedAsync();
     }

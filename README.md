@@ -35,9 +35,7 @@ dotnet build -c Release
 
 | Opção | Efeito |
 |---|---|
-| `--sim` | abre conectado a um mouse simulado (não precisa de hardware) |
 | `--page dpi` | abre numa página: `overview`, `performance`, `dpi`, `buttons`, `lighting`, `advanced` |
-| `--selftest` | roda os testes do protocolo e da ponte da interface |
 | `--list` | lista as coleções HID do PC |
 
 ### Fotos do mouse
@@ -62,7 +60,7 @@ uma instalação do app oficial:
   relê tudo o que gravou e compara byte a byte.
 - DPI só é gravado quando o modelo é identificado como PAW3950, e nenhum botão pode ficar sem o
   clique esquerdo.
-- O protocolo veio de análise estática e o modo simulador; alguns detalhes ainda precisam de
+- O protocolo veio de análise estática do software oficial; alguns detalhes ainda precisam de
   confirmação em hardware — veja [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## Estrutura
@@ -70,7 +68,7 @@ uma instalação do app oficial:
 ```
 src/SharkConfig/
   Protocol/        pacotes, checksum, mapa da memória, modelo de configuração
-  Transport/       HID do Windows (SetupAPI/hid.dll) e mouse simulado
+  Transport/       HID do Windows (SetupAPI/hid.dll)
   MouseDevice.cs   transações, leitura da memória, aplicação com backup
   UI/              janela nativa + WebView2 e ponte JS ↔ C#
   wwwroot/         interface (HTML/CSS/JS)
@@ -78,8 +76,8 @@ tools/             sonda de coleções HID e atualização das fotos
 docs/PROTOCOL.md   protocolo documentado
 ```
 
-Consumo medido com o simulador: cerca de 97 MB de RAM privada e ~0% de CPU parado; ao minimizar,
-a interface é suspensa.
+Consumo medido: cerca de 97 MB de RAM privada e ~0% de CPU parado; ao minimizar, a interface é
+suspensa.
 
 ## Licença
 

@@ -124,10 +124,8 @@ public sealed class Bridge
     object? Dispatch(string cmd, JsonNode? args) => cmd switch
     {
         "init" => Init(),
-        "connectSim" => Connect(new MouseDevice(new SimulatedMouse())),
         "connectReal" => ConnectReal(),
         "read" => Read(),
-        "defaults" => ConfigDto.From(MouseConfig.FromImage(MouseConfig.DefaultImage())),
         "preview" => Preview(Dto(args)),
         "apply" => Apply(Dto(args)),
         "exportBackup" => _dev?.Image is { } img ? MouseDevice.SaveBackup(img, _backupDir) : throw new InvalidOperationException("Leia o mouse antes de exportar."),
@@ -190,7 +188,6 @@ public sealed class Bridge
         device = new
         {
             description = _dev!.Description,
-            simulated = _dev.Description.StartsWith("Simulador"),
             battery = _battery is null ? null : new { percent = _battery.Percent, millivolts = _battery.Millivolts },
             firmware = _version is ushort v ? $"{v >> 8}.{v & 0xFF:D2}" : null,
             model = _model is { } md ? ModelIndex(md.Mid) : null,

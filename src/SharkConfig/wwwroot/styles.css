@@ -63,7 +63,6 @@ button, input, select { font: inherit; color: inherit; }
 .device-status { display: flex; align-items: center; gap: 6px; color: var(--pencil); font-size: 12px; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--graphite); }
 .dot.on { background: #32D74B; }
-.dot.sim { background: var(--caution); }
 .battery { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--pencil); font-size: 12px; }
 .battery .bar { flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.09); overflow: hidden; }
 .battery .bar i { display: block; height: 100%; border-radius: inherit; background: var(--pencil); }

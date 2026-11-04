@@ -81,10 +81,8 @@ const PAGES = {
 const stageColor = () => S.cfg ? S.cfg.colors[S.cfg.currentStage] : "#0A84FF";
 const hz = (code) => S.opt?.pollingRates.find((p) => p.code === code)?.hz ?? 0;
 const photoSrc = () => `img/mouse${S.model}.png`;
-function connectionText() {
-  if (S.device.simulated) return "Simulador — as mudanças não chegam a um mouse real";
-  return /dongle/.test(S.device.description) ? "Conectado pelo receptor 8K" : "Conectado pelo cabo";
-}
+const viaDongle = () => /dongle/.test(S.device.description);
+const connectionText = () => viaDongle() ? "Conectado pelo receptor 8K" : "Conectado pelo cabo";
 
 // ---------------- alterações ----------------
 function changeCount() {
@@ -137,14 +135,14 @@ function renderRail() {
   $("#device").innerHTML = `
     <img src="${photoSrc()}" alt="">
     <div><div class="device-name">X8 Ultra</div>
-      <div class="device-status"><i class="dot ${d ? (d.simulated ? "sim" : "on") : ""}"></i>${d ? (d.simulated ? "Simulador" : /dongle/.test(d.description) ? "Receptor 8K" : "Cabo USB") : "Desconectado"}</div></div>
+      <div class="device-status"><i class="dot ${d ? "on" : ""}"></i>${d ? (viaDongle() ? "Receptor 8K" : "Cabo USB") : "Desconectado"}</div></div>
     ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`;
   $("#nav").innerHTML = Object.entries(PAGES).map(([key, p]) => `
     <button data-page="${key}" ${S.page === key ? 'aria-current="page"' : ""} ${!S.cfg && key !== "overview" && key !== "advanced" ? "disabled" : ""}>
       <svg viewBox="0 0 24 24"><path d="${ICON[key]}"/></svg>${p.title}</button>`).join("");
   $("#rail-foot").innerHTML = d
     ? `<button class="btn block" id="reread">Ler o mouse de novo</button><small>${d.firmware ? `Firmware ${d.firmware}` : ""}</small>`
-    : `<button class="btn accent block" data-connect="real">Procurar mouse</button><button class="btn block" data-connect="sim">Abrir simulador</button><small>SharkConfig ${S.opt?.version ?? ""} — não oficial</small>`;
+    : `<button class="btn accent block" data-connect>Procurar mouse</button><small>SharkConfig ${S.opt?.version ?? ""} — não oficial</small>`;
 }
 
 function render() {
@@ -196,7 +194,7 @@ const VIEWS = {
     if (!S.cfg) return `<div class="stage" style="height:100%">${photo()}
       <div class="empty"><h2>Conecte o seu X8 Ultra</h2>
         <p>Use o receptor 8K ou o cabo USB-C e feche o app oficial da Attack Shark.</p>
-        <div class="acts"><button class="btn accent" data-connect="real">Procurar mouse</button><button class="btn" data-connect="sim">Abrir simulador</button></div>
+        <div class="acts"><button class="btn accent" data-connect>Procurar mouse</button></div>
       </div></div>`;
     // Visão geral é só informativa: nada aqui altera a configuração.
     const c = S.cfg, d = S.device;
@@ -375,7 +373,7 @@ function loadState(st) {
   if (st.warnings.length) toast(`${st.warnings.length} campo(s) com leitura inválida. Veja em Avançado.`, true);
 }
 
-const connect = (kind) => run(async () => loadState(await bridge.call(kind === "sim" ? "connectSim" : "connectReal")));
+const connect = () => run(async () => loadState(await bridge.call("connectReal")));
 
 async function applyFlow() {
   const ops = await bridge.call("preview", S.cfg);
@@ -402,7 +400,7 @@ document.addEventListener("error", (e) => {
 // ---------------- eventos globais ----------------
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-page]"); if (nav && !nav.disabled) return go(nav.dataset.page);
-  const c = e.target.closest("[data-connect]"); if (c) return connect(c.dataset.connect);
+  if (e.target.closest("[data-connect]")) return connect();
   if (e.target.closest("#reread")) return run(async () => loadState(await bridge.call("read")));
 });
 $("#discard").addEventListener("click", () => { S.cfg = clone(S.saved); render(); });
@@ -428,5 +426,4 @@ bridge.on("log", (m) => {
   try { S.opt = await bridge.call("init"); } catch { S.opt = null; }
   if (q.get("page") && PAGES[q.get("page")]) S.page = q.get("page");
   render();
-  if (q.get("sim") === "1") connect("sim");
 })();
