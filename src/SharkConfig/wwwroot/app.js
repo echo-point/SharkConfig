@@ -146,7 +146,9 @@ function renderRail() {
 }
 
 function render() {
-  const page = S.cfg || S.page === "advanced" ? S.page : "overview"; // páginas do mouse exigem leitura
+  // sem mouse: tela de conexão (sem barra lateral nem cabeçalho); com mouse: layout normal
+  document.body.classList.toggle("no-device", !S.cfg);
+  const page = S.cfg ? S.page : "overview";
   $("#title").textContent = PAGES[page].title;
   $("#subtitle").textContent = PAGES[page].sub();
   renderRail();
@@ -191,11 +193,12 @@ const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${v} de 10`, le
 // ---------------- páginas ----------------
 const VIEWS = {
   overview() {
-    if (!S.cfg) return `<div class="stage" style="height:100%">${photo()}
+    if (!S.cfg) return `<div class="connect">
       <div class="empty"><h2>Conecte o seu X8 Ultra</h2>
         <p>Use o receptor 8K ou o cabo USB-C e feche o app oficial da Attack Shark.</p>
-        <div class="acts"><button class="btn accent" data-connect>Procurar mouse</button></div>
-      </div></div>`;
+        <button class="btn accent" data-connect>Procurar mouse</button>
+      </div>
+      <div class="stage">${photo()}</div></div>`;
     // Visão geral é só informativa: nada aqui altera a configuração.
     const c = S.cfg, d = S.device;
     return `<div class="overview">
