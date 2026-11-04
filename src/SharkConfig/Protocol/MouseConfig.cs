@@ -29,6 +29,19 @@ public sealed class MouseConfig
     public static readonly string[] SensorModeLabels = ["LP (normal)", "HP (alto desempenho)", "Corded (ultra)"];
     public static readonly string[] DpiLedEffects = ["Desligado", "Fixo", "Respiração"];
 
+    // Limites dos controles do app oficial (QSlider/QSpinBox setMinimum/setMaximum).
+    public const int DebounceMin = 1, DebounceMax = 20;      // @0x14014fe5d
+    public const int LedSpeedMin = 1, LedSpeedMax = 5;       // @0x14014b555
+    // Brilho: slider de 10 níveis → valor gravado (@0x14014a84a). Nível 5 = 0x80 (padrão).
+    public static readonly byte[] BrightnessLevels = [16, 30, 60, 90, 128, 150, 180, 210, 230, 255];
+    public static int BrightnessLevelOf(int raw)
+    {
+        int best = 0;
+        for (int i = 1; i < BrightnessLevels.Length; i++)
+            if (Math.Abs(BrightnessLevels[i] - raw) < Math.Abs(BrightnessLevels[best] - raw)) best = i;
+        return best + 1;
+    }
+
     public const int DpiMin = 50, DpiSeg1Max = 30000, DpiMax = 42000;
     public const byte DpiSeg2Flag = 0x11;
     public const bool SensorHighBitsQuirk = true; // 3950/3395 (@0x140018431)
@@ -146,6 +159,7 @@ public sealed class MouseConfig
         img.SetScalar(Flash.DpiLedEffect, (byte)DpiLedEffect);
         img.SetScalar(Flash.DpiLedBrightness, (byte)DpiLedBrightness);
         img.SetScalar(Flash.DpiLedSpeed, (byte)DpiLedSpeed);
+        img.SetScalar(Flash.DpiLedOn, (byte)(DpiLedEffect == 0 ? 0 : 1));
 
         var old = FromImage(baseImg);
         for (int i = 0; i < Flash.MaxStages; i++)
@@ -173,7 +187,7 @@ public sealed class MouseConfig
     {
         var fields = new List<(int, int)>();
         foreach (var a in new[] { Flash.PollingRate, Flash.StageCount, Flash.CurrentStage, Flash.Lod,
-                     Flash.DpiLedEffect, Flash.DpiLedBrightness, Flash.DpiLedSpeed, Flash.Debounce, Flash.MotionSync,
+                     Flash.DpiLedEffect, Flash.DpiLedBrightness, Flash.DpiLedSpeed, Flash.DpiLedOn, Flash.Debounce, Flash.MotionSync,
                      Flash.SleepTime, Flash.AngleSnap, Flash.Ripple, Flash.Performance, Flash.PerformanceTimeout,
                      Flash.SensorMode })
             fields.Add((a, 2));

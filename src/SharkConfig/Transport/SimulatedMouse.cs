@@ -14,6 +14,9 @@ public sealed class SimulatedMouse : IHidTransport
     public int BatteryMv { get; set; } = 3950;
     public ushort Firmware { get; set; } = 0x0102;
     public List<string> Log { get; } = [];
+    // falhas simuladas para testar as proteções
+    public bool DropWriteEcho { get; set; }      // escrita sem resposta
+    public int? StuckAddress { get; set; }       // endereço que não aceita gravação (conferência falha)
     public string Description => "Simulador (sem hardware)";
 
     public SimulatedMouse(FlashImage? initial = null) => Flash = initial ?? MouseConfig.DefaultImage();
@@ -33,9 +36,11 @@ public sealed class SimulatedMouse : IHidTransport
             case 0x08: // read flash
                 Array.Copy(Flash.Data, addr, resp, 6, Math.Min(len, 10));
                 break;
-            case 0x07: // write flash
-                Array.Copy(r, 6, Flash.Data, addr, Math.Min(len, 10));
-                break;
+            case 0x07: // write flash: o firmware ecoa o pacote inteiro (@0x180014260)
+                if (addr != StuckAddress) Array.Copy(r, 6, Flash.Data, addr, Math.Min(len, 10));
+                if (DropWriteEcho) return;
+                _responses.Enqueue((byte[])r.Clone());
+                return;
             case 0x04: // battery: [6]=% [7]=status [8..9]=mV BE
                 resp[6] = (byte)BatteryPercent; resp[7] = 0; resp[8] = (byte)(BatteryMv >> 8); resp[9] = (byte)BatteryMv;
                 break;

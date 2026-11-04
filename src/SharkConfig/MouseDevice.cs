@@ -31,24 +31,38 @@ public sealed class MouseDevice : IDisposable
         return new MouseDevice(new WinHidTransport(pick.Value.Out, pick.Value.In));
     }
 
-    /// <summary>Envia um pedido e espera a resposta com o mesmo opcode (3 tentativas, 100 ms — @0x18000d820).</summary>
+    // O thread oficial espera ≥ 8 ms entre pacotes (@0x180014bc7); usamos 10 ms.
+    const int MinGapMs = 10;
+    long _lastSend;
+
+    /// <summary>
+    /// Envia um pedido e espera a resposta (3 tentativas, 100 ms — @0x18000d820).
+    /// Leitura: checksum ok e mesmo opcode. Escrita (0x07): a resposta tem de ser o eco
+    /// idêntico dos 17 bytes do pedido, como o oficial confere (@0x180014260).
+    /// </summary>
     public byte[]? Transact(Cmd cmd, int address = 0, ReadOnlySpan<byte> data = default, int? length = null)
     {
         var req = Packet.Build(cmd, address, data, length);
         for (int attempt = 0; attempt < 3; attempt++)
         {
+            long wait = _lastSend + MinGapMs - Environment.TickCount64;
+            if (wait > 0) Thread.Sleep((int)wait);
             Log?.Invoke("→ " + Packet.Hex(req));
             _t.Write(req);
+            _lastSend = Environment.TickCount64;
             var deadline = Environment.TickCount64 + 100;
             while (Environment.TickCount64 < deadline)
             {
                 var r = _t.Read((int)Math.Max(1, deadline - Environment.TickCount64));
                 if (r is null) break;
-                if (Packet.IsResponseTo(r, cmd)) { Log?.Invoke("← " + Packet.Hex(r)); return r; }
+                bool ok = cmd == Cmd.WriteFlash
+                    ? r.Length >= Packet.Size && r.AsSpan(0, Packet.Size).SequenceEqual(req)
+                    : Packet.IsResponseTo(r, cmd);
+                if (ok) { Log?.Invoke("← " + Packet.Hex(r)); return r; }
                 Log?.Invoke("  (ignorado) " + Packet.Hex(r));
             }
         }
-        Log?.Invoke($"✗ sem resposta para 0x{(byte)cmd:X2}");
+        Log?.Invoke($"✗ sem resposta válida para 0x{(byte)cmd:X2}");
         return null;
     }
 
@@ -80,22 +94,46 @@ public sealed class MouseDevice : IDisposable
         return img;
     }
 
-    /// <summary>Grava somente os campos alterados. Faz backup JSON da imagem antes, na 1ª escrita.</summary>
+    /// <summary>
+    /// Grava somente os campos alterados, do jeito do app oficial (1 pacote por campo, só 0x07).
+    /// Proteções: recusa se a leitura do mouse veio com campos inválidos; confere todos os pacotes
+    /// contra as faixas permitidas antes de enviar o primeiro; backup antes; eco exato de cada
+    /// escrita; e no fim relê cada região gravada e compara byte a byte.
+    /// </summary>
     public int Apply(MouseConfig cfg, string backupDir)
     {
         if (Image is null) throw new InvalidOperationException("Leia a configuração antes de gravar.");
+        var current = MouseConfig.FromImage(Image);
+        if (current.Warnings.Count > 0)
+            throw new InvalidOperationException("A leitura do mouse tem campos inválidos (" + string.Join("; ", current.Warnings) +
+                "). Por segurança, nada foi gravado. Leia o mouse de novo.");
+
         var after = cfg.ApplyTo(Image);
         var ops = MouseConfig.Diff(Image, after);
         if (ops.Count == 0) return 0;
+        foreach (var (addr, bytes) in ops)
+            if (!Flash.IsWritable(addr, bytes.Length))
+                throw new InvalidOperationException($"Escrita fora das faixas permitidas: 0x{addr:X4}+{bytes.Length}. Nada foi gravado.");
+
         SaveBackup(Image, backupDir);
         foreach (var (addr, bytes) in ops)
         {
-            if (!Flash.IsWritable(addr, bytes.Length))
-                throw new InvalidOperationException($"Escrita fora das faixas permitidas: 0x{addr:X4}+{bytes.Length}");
             if (Transact(Cmd.WriteFlash, addr, bytes) is null)
-                throw new IOException($"Mouse não confirmou a escrita em 0x{addr:X4}");
+                throw new IOException($"O mouse não confirmou a escrita em 0x{addr:X4}. Os campos anteriores já foram gravados; " +
+                    "leia o mouse de novo antes de continuar. O backup está em " + backupDir);
             Image.Load(addr, bytes);
         }
+
+        // conferência: relê o que foi gravado
+        foreach (var (addr, bytes) in ops)
+        {
+            var r = Transact(Cmd.ReadFlash, addr, default, bytes.Length)
+                    ?? throw new IOException($"Não foi possível reler 0x{addr:X4} para conferir a gravação.");
+            if (!r.AsSpan(6, bytes.Length).SequenceEqual(bytes))
+                throw new IOException($"Conferência falhou em 0x{addr:X4}: gravado {Packet.Hex(bytes)}, lido {Packet.Hex(r.AsSpan(6, bytes.Length))}. " +
+                    "O backup está em " + backupDir);
+        }
+        Log?.Invoke($"✓ {ops.Count} escrita(s) gravadas e conferidas");
         return ops.Count;
     }
 

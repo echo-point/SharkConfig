@@ -113,8 +113,8 @@ function set(mutator, rerender = false) {
 function photo({ spots = false, leds = false } = {}) {
   const c = S.cfg;
   const ledHtml = leds && c ? LEDS.map((l) => {
-    const op = c.ledEffect === 0 ? 0 : 0.35 + 0.65 * (c.ledBrightness / 255);
-    return `<i class="led ${c.ledEffect === 2 ? "breathe" : ""}" style="left:${l.x}%;top:${l.y}%;opacity:${op};--speed:${(11 - c.ledSpeed) * 0.45 + 0.8}s"></i>`;
+    const op = c.ledEffect === 0 ? 0 : 0.3 + 0.7 * (c.ledBrightness / 10);
+    return `<i class="led ${c.ledEffect === 2 ? "breathe" : ""}" style="left:${l.x}%;top:${l.y}%;opacity:${op};--speed:${(6 - c.ledSpeed) * 0.9 + 0.8}s"></i>`;
   }).join("") : "";
   const label = (id) => S.opt.buttons.find((b) => b.id === id)?.label ?? "Função personalizada";
   const spotHtml = spots ? SPOTS.map((h, i) => `
@@ -127,8 +127,8 @@ function photo({ spots = false, leds = false } = {}) {
 function updateLeds() {
   // atualização barata do preview de LED sem refazer a página
   if (S.page !== "lighting" || !S.cfg) return;
-  const c = S.cfg, op = c.ledEffect === 0 ? 0 : 0.35 + 0.65 * (c.ledBrightness / 255);
-  $$(".photo .led").forEach((l) => { l.style.opacity = op; l.classList.toggle("breathe", c.ledEffect === 2); l.style.setProperty("--speed", `${(11 - c.ledSpeed) * 0.45 + 0.8}s`); });
+  const c = S.cfg, op = c.ledEffect === 0 ? 0 : 0.3 + 0.7 * (c.ledBrightness / 10);
+  $$(".photo .led").forEach((l) => { l.style.opacity = op; l.classList.toggle("breathe", c.ledEffect === 2); l.style.setProperty("--speed", `${(6 - c.ledSpeed) * 0.9 + 0.8}s`); });
 }
 
 // ---------------- shell ----------------
@@ -188,7 +188,7 @@ function bindControls(root) {
     if (name === "debounce") $("#debounce-warn").hidden = v >= 4;
   }));
 }
-const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${Math.round(v / 2.55)}%`, ledSpeed: (v) => String(v) };
+const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${v} de 10`, ledSpeed: (v) => `${v} de 5` };
 
 // ---------------- páginas ----------------
 const VIEWS = {
@@ -239,7 +239,7 @@ const VIEWS = {
             ${row("Dormir após", "Tempo parado até o repouso", select("sleep", times, c.sleep))}
           </div></div>
           <div class="group"><h3>Cliques</h3><div class="rows"><div class="row stack">
-            <div class="label">Tempo de resposta<span>Debounce dos botões</span></div>${slider("debounce", c.debounce, 0, 30, OUT.debounce(c.debounce))}
+            <div class="label">Tempo de resposta<span>Debounce dos botões</span></div>${slider("debounce", c.debounce, S.opt.limits.debounce.min, S.opt.limits.debounce.max, OUT.debounce(c.debounce))}
           </div></div><p class="note warn" id="debounce-warn" ${c.debounce < 4 ? "" : "hidden"}>Valores muito baixos podem gerar clique duplo.</p></div>
         </div>
       </div></div></div>`;
@@ -247,23 +247,26 @@ const VIEWS = {
 
   dpi() {
     const c = S.cfg, o = S.opt.dpi;
+    // DPI só é gravável quando o modelo foi identificado como PAW3950 (codificação conhecida)
+    const lock = !S.device.dpiSupported ? "disabled" : "";
     const ticks = [50, 1000, 2500, 5000, 10000, 20000, 30000, 42000].map((t) =>
       `<span class="tick" style="left:${dpiPos(t)}">${t >= 1000 ? fmt(t / 1000) + "K" : t}</span>`).join("");
     const marks = c.dpi.slice(0, c.stageCount).map((v, i) =>
-      `<button class="mark ${i === c.currentStage ? "cur" : ""}" data-mark="${i}" style="left:${dpiPos(v)};--c:${c.colors[i]}" aria-label="Estágio ${i + 1}: ${fmt(v)} DPI"><span>${fmt(v)}</span></button>`).join("");
+      `<button class="mark ${i === c.currentStage ? "cur" : ""}" data-mark="${i}" ${lock} style="left:${dpiPos(v)};--c:${c.colors[i]}" aria-label="Estágio ${i + 1}: ${fmt(v)} DPI"><span>${fmt(v)}</span></button>`).join("");
     const rows = c.dpi.slice(0, c.stageCount).map((v, i) => `<div class="row"><div class="srow" style="width:100%">
         <label class="swatch" style="--c:${c.colors[i]}" title="Cor do estágio"><input type="color" data-color="${i}" value="${c.colors[i]}"></label>
         <span>Estágio ${i + 1}</span>
-        <input class="num" type="number" data-dpi="${i}" value="${v}" min="${o.min}" max="${o.max}" step="${v >= o.seg1 ? 100 : 50}" aria-label="DPI do estágio ${i + 1}">
+        <input class="num" type="number" data-dpi="${i}" value="${v}" min="${o.min}" max="${o.max}" step="${v >= o.seg1 ? 100 : 50}" aria-label="DPI do estágio ${i + 1}" ${lock}>
         <button class="use" data-current="${i}" aria-pressed="${i === c.currentStage}">${i === c.currentStage ? "Ativo" : "Usar"}</button>
-        <button class="del" data-remove="${i}" ${c.stageCount <= 1 ? "disabled" : ""} aria-label="Remover estágio ${i + 1}">×</button>
+        <button class="del" data-remove="${i}" ${c.stageCount <= 1 || lock ? "disabled" : ""} aria-label="Remover estágio ${i + 1}">×</button>
       </div></div>`).join("");
     return `<div class="dpi-page">
       <div class="ruler"><div class="track" id="track"><i class="line"></i><i class="hi" style="left:${dpiPos(o.seg1)}" title="Acima de 30.000 o passo é 100"></i>${ticks}${marks}</div></div>
       <div class="workspace"><div class="stage">${photo()}</div>
         <div class="inspector"><h2>Estágios</h2><p class="sub">Arraste na régua ou digite. Um botão com a função Alternar estágios percorre a lista.</p>
+          ${lock ? '<p class="note warn" style="margin:-6px 2px 0">O modelo deste mouse não foi identificado como PAW3950. Por segurança, os valores de DPI ficam só para leitura; cores e estágio ativo podem ser trocados.</p>' : ""}
           <div class="rows">${rows}</div>
-          <div class="acts-row"><button class="btn" id="add-stage" ${c.stageCount >= o.maxStages ? "disabled" : ""}>Adicionar estágio</button></div>
+          <div class="acts-row"><button class="btn" id="add-stage" ${c.stageCount >= o.maxStages || lock ? "disabled" : ""}>Adicionar estágio</button></div>
         </div></div></div>`;
   },
 
@@ -284,8 +287,8 @@ const VIEWS = {
       <div class="inspector"><div class="group"><h3>Efeito</h3>${seg("ledEffect", S.opt.ledEffects.map((m, i) => ({ v: i, label: m })), c.ledEffect)}
         <p class="note">A cor segue o estágio de DPI ativo. Troque as cores em Sensibilidade.</p></div>
         <div class="group"><h3>Ajustes</h3><div class="rows">
-          <div class="row stack"><div class="label">Brilho</div>${slider("ledBrightness", c.ledBrightness, 0, 255, OUT.ledBrightness(c.ledBrightness))}</div>
-          <div class="row stack"><div class="label">Velocidade da respiração</div>${slider("ledSpeed", c.ledSpeed, 0, 10, OUT.ledSpeed(c.ledSpeed))}</div>
+          <div class="row stack"><div class="label">Brilho</div>${slider("ledBrightness", c.ledBrightness, 1, S.opt.limits.brightnessLevels, OUT.ledBrightness(c.ledBrightness))}</div>
+          <div class="row stack"><div class="label">Velocidade da respiração</div>${slider("ledSpeed", c.ledSpeed, S.opt.limits.ledSpeed.min, S.opt.limits.ledSpeed.max, OUT.ledSpeed(c.ledSpeed))}</div>
         </div></div></div></div>`;
   },
 
@@ -309,7 +312,7 @@ const BIND = {
   lighting: bindControls,
   dpi(v) {
     const track = $("#track", v);
-    $$("[data-mark]", v).forEach((m) => m.addEventListener("pointerdown", (e) => {
+    $$("[data-mark]:not(:disabled)", v).forEach((m) => m.addEventListener("pointerdown", (e) => {
       const i = Number(m.dataset.mark); m.setPointerCapture(e.pointerId);
       m.onpointermove = (ev) => {
         const r = track.getBoundingClientRect();

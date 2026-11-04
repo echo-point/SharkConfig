@@ -31,6 +31,8 @@ static class SelfTest
 {
     static int _fail;
 
+    static bool Throws(Action a) { try { a(); return false; } catch (Exception) { return true; } }
+
     static void Check(bool ok, string name)
     {
         Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}");
@@ -109,6 +111,41 @@ static class SelfTest
         dto.PollingCode = 0x08; dto.Buttons[2] = "dpi-up"; dto.Colors[0] = "#123456";
         var edited = MouseConfig.FromImage(baseImg); dto.ApplyTo(edited);
         Check(MouseConfig.Diff(baseImg, edited.ApplyTo(baseImg)).Count == 3, "JSON da UI com 3 mudanças = 3 escritas");
+
+        // 8. conformidade com o app oficial e proteções contra gravação errada
+        string tmp = Path.Combine(Path.GetTempPath(), "sharkconfig-selftest");
+        (SimulatedMouse s, MouseDevice d, MouseConfig c, UI.ConfigDto dto) Fresh()
+        {
+            var s = new SimulatedMouse(); var d = new MouseDevice(s); var c = MouseConfig.FromImage(d.ReadFlash());
+            return (s, d, c, UI.ConfigDto.From(c));
+        }
+
+        var f = Fresh(); f.dto.LedEffect = 0; f.dto.ApplyTo(f.c);
+        var ledOps = MouseConfig.Diff(f.d.Image!, f.c.ApplyTo(f.d.Image!)).Select(o => o.Address).ToList();
+        Check(ledOps.Contains(Flash.DpiLedEffect) && ledOps.Contains(Flash.DpiLedOn), "LED desligado também grava 'LED ligado' = 0 (0x52)");
+
+        f = Fresh(); f.dto.StageCount = 8; f.dto.Debounce = 0; f.dto.LedSpeed = 9; f.dto.LedBrightness = 10; f.dto.ApplyTo(f.c);
+        Check(f.c.StageCount == 6 && f.c.DebounceMs == 1 && f.c.DpiLedSpeed == 5 && f.c.DpiLedBrightness == 255,
+            $"limites oficiais: estágios≤6, debounce 1–20, velocidade 1–5, brilho em níveis ({f.c.StageCount},{f.c.DebounceMs},{f.c.DpiLedSpeed},{f.c.DpiLedBrightness})");
+
+        f = Fresh(); f.dto.PollingCode = 0x03;
+        Check(Throws(() => f.dto.ApplyTo(f.c)), "taxa de atualização fora da lista é recusada");
+
+        f = Fresh(); f.dto.Buttons[0] = "dpi-up";
+        Check(Throws(() => f.dto.ApplyTo(f.c)), "não deixa ficar sem clique esquerdo");
+
+        f = Fresh(); f.s.Flash.Data[Flash.SensorMode + 1] ^= 0xFF; var f2 = new MouseDevice(f.s); var c2 = MouseConfig.FromImage(f2.ReadFlash());
+        c2.PollingRateCode = 0x40; int before = f.s.Flash.Data[0];
+        Check(Throws(() => f2.Apply(c2, tmp)) && f.s.Flash.Data[0] == before, "leitura com campo inválido bloqueia qualquer gravação");
+
+        f = Fresh(); f.s.DropWriteEcho = true; f.c.PollingRateCode = 0x40;
+        Check(Throws(() => f.d.Apply(f.c, tmp)), "escrita sem eco do mouse interrompe e avisa");
+
+        f = Fresh(); f.s.StuckAddress = Flash.PollingRate; f.c.PollingRateCode = 0x40;
+        Check(Throws(() => f.d.Apply(f.c, tmp)), "conferência por releitura detecta gravação que não pegou");
+
+        Check(UI.Bridge.ModelIndex(10) == 5 && UI.Bridge.ModelIndex(16) == 11 && UI.Bridge.IsPaw3950Model(UI.Bridge.ModelIndex(10))
+              && !UI.Bridge.IsPaw3950Model(UI.Bridge.ModelIndex(16)), "MID decimal como no oficial; DPI só para modelos PAW3950");
 
         Console.WriteLine(_fail == 0 ? "\nTodos os testes passaram." : $"\n{_fail} teste(s) falharam.");
         return _fail == 0 ? 0 : 1;

@@ -26,9 +26,11 @@ public static class Flash
     public const int SensorMode = 0xB9;
 
     // LED do DPI: 4 pares em 0x4C,0x4E,0x50,0x52
-    public const int DpiLedEffect = 0x4C, DpiLedBrightness = 0x4E, DpiLedSpeed = 0x50, DpiLedUnknown = 0x52;
+    // 0x52 = "LED ligado": o app oficial grava 1 se o efeito ≠ desligado, senão 0 (@0x140140f80).
+    public const int DpiLedEffect = 0x4C, DpiLedBrightness = 0x4E, DpiLedSpeed = 0x50, DpiLedOn = 0x52;
 
-    public const int MaxStages = 8;
+    public const int MaxStages = 8;       // registros de DPI que existem na memória
+    public const int MaxUserStages = 6;   // limite do modelo (DPIMaxGrade=6 no Config.ini oficial)
     public const int ButtonSlots = 16;
 
     public static int DpiLegacy(int i) => 0x0C + 4 * i;      // 3 bytes + chk

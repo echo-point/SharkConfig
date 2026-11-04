@@ -25,6 +25,7 @@ public sealed class ConfigDto
     public int[] Dpi { get; set; } = [];
     public string[] Colors { get; set; } = [];
     public int LedEffect { get; set; }
+    /// <summary>Nível de brilho 1–10 (como o slider do app oficial), não o valor gravado.</summary>
     public int LedBrightness { get; set; }
     public int LedSpeed { get; set; }
     /// <summary>Id de <see cref="ButtonOption"/> ou "custom:tt-pp-pp" se não mapeado.</summary>
@@ -37,22 +38,42 @@ public sealed class ConfigDto
         PerformanceTimeout = c.PerformanceTimeoutUnits, Debounce = c.DebounceMs, Sleep = c.SleepUnits,
         StageCount = c.StageCount, CurrentStage = c.CurrentStage, Dpi = (int[])c.Dpi.Clone(),
         Colors = c.DpiColors.Select(x => $"#{x.R:X2}{x.G:X2}{x.B:X2}").ToArray(),
-        LedEffect = c.DpiLedEffect, LedBrightness = c.DpiLedBrightness, LedSpeed = c.DpiLedSpeed,
+        LedEffect = c.DpiLedEffect, LedBrightness = MouseConfig.BrightnessLevelOf(c.DpiLedBrightness), LedSpeed = c.DpiLedSpeed,
         Buttons = c.Buttons.Select(b => ButtonOption.Find(b)?.Id ?? $"custom:{(byte)b.Type:X2}-{b.P1:X2}-{b.P2:X2}").ToArray(),
     };
 
+    /// <summary>
+    /// Aplica a edição da UI sobre a config lida do mouse. Valores só são validados/limitados quando o
+    /// usuário os mudou — o que veio do mouse e não foi tocado é preservado byte a byte.
+    /// Valores fora das listas/faixas do app oficial são rejeitados.
+    /// </summary>
     public void ApplyTo(MouseConfig c)
     {
-        c.PollingRateCode = (byte)PollingCode; c.SensorMode = Math.Clamp(SensorMode, 0, 2); c.Lod = Math.Clamp(Lod, 0, 2);
+        static int Pick(int current, int edited, int min, int max) => edited == current ? current : Math.Clamp(edited, min, max);
+        static byte OneOf(byte current, int edited, IEnumerable<byte> allowed, string what) =>
+            edited == current ? current : allowed.Contains((byte)edited) && edited is >= 0 and <= 255
+                ? (byte)edited : throw new ArgumentException($"{what}: valor {edited} não é aceito pelo mouse.");
+
+        c.PollingRateCode = OneOf(c.PollingRateCode, PollingCode, MouseConfig.PollingRates.Select(p => p.Code), "Taxa de atualização");
+        c.SensorMode = Pick(c.SensorMode, SensorMode, 0, 2);
+        c.Lod = Pick(c.Lod, Lod, 0, 2);
         c.MotionSync = MotionSync; c.AngleSnap = AngleSnap; c.Ripple = Ripple; c.Performance = Performance;
-        c.PerformanceTimeoutUnits = (byte)PerformanceTimeout; c.DebounceMs = Math.Clamp(Debounce, 0, 30); c.SleepUnits = (byte)Sleep;
-        c.StageCount = Math.Clamp(StageCount, 1, Flash.MaxStages);
+        c.PerformanceTimeoutUnits = OneOf(c.PerformanceTimeoutUnits, PerformanceTimeout, MouseConfig.SleepOptions.Take(8).Select(s => s.Units), "Desempenho máximo");
+        c.SleepUnits = OneOf(c.SleepUnits, Sleep, MouseConfig.SleepOptions.Select(s => s.Units), "Dormir após");
+        c.DebounceMs = Pick(c.DebounceMs, Debounce, MouseConfig.DebounceMin, MouseConfig.DebounceMax);
+        c.StageCount = Pick(c.StageCount, StageCount, 1, Flash.MaxUserStages);
         c.CurrentStage = Math.Clamp(CurrentStage, 0, c.StageCount - 1);
-        for (int i = 0; i < Flash.MaxStages && i < Dpi.Length; i++) c.Dpi[i] = MouseConfig.SnapDpi(Dpi[i]);
+        for (int i = 0; i < Flash.MaxStages && i < Dpi.Length; i++)
+            if (Dpi[i] != c.Dpi[i]) c.Dpi[i] = MouseConfig.SnapDpi(Dpi[i]);
         for (int i = 0; i < Flash.MaxStages && i < Colors.Length; i++) c.DpiColors[i] = ColorTranslator.FromHtml(Colors[i]);
-        c.DpiLedEffect = Math.Clamp(LedEffect, 0, 2); c.DpiLedBrightness = Math.Clamp(LedBrightness, 0, 255); c.DpiLedSpeed = Math.Clamp(LedSpeed, 0, 10);
+        c.DpiLedEffect = Pick(c.DpiLedEffect, LedEffect, 0, 2);
+        if (LedBrightness != MouseConfig.BrightnessLevelOf(c.DpiLedBrightness))
+            c.DpiLedBrightness = MouseConfig.BrightnessLevels[Math.Clamp(LedBrightness, 1, 10) - 1];
+        c.DpiLedSpeed = Pick(c.DpiLedSpeed, LedSpeed, MouseConfig.LedSpeedMin, MouseConfig.LedSpeedMax);
         for (int i = 0; i < c.Buttons.Length && i < Buttons.Length; i++)
             if (ButtonOption.All.FirstOrDefault(o => o.Id == Buttons[i]) is { } opt) c.Buttons[i] = opt.ToAction();
+        if (!c.Buttons.Any(b => b.Type == ButtonType.Mouse && b.P1 == 0x01))
+            throw new ArgumentException("Pelo menos um botão precisa continuar como clique esquerdo.");
     }
 }
 
@@ -72,14 +93,17 @@ public sealed class Bridge
     ushort? _version;
     (byte Cid, byte Mid)? _model;
 
-    // MIDs do Config.ini do app oficial na ordem Drive1..18 → foto img/mouse{i}.png (mesma convenção do app oficial)
+    // MIDs do Config.ini do app oficial na ordem Drive1..18 → foto img/mouse{i}.png.
+    // O app oficial lê os MIDs como DECIMAL (QString::toInt base 10). Drive1–8 (índice 0–7) usam o
+    // sensor PAW3950 com DPI 50–42.000; Drive9+ usam o 3955, com outra codificação de DPI.
     static readonly string[] ModelMids = ["01","02","03","04","05","10","11","12","13","14","15","16","17","18","19","20","21","22"];
-    static int? ModelIndex(byte mid)
+    public static int? ModelIndex(byte mid)
     {
-        int i = Array.FindIndex(ModelMids, s => Convert.ToInt32(s, 16) == mid);
-        if (i < 0) i = Array.FindIndex(ModelMids, s => int.Parse(s) == mid);
+        int i = Array.FindIndex(ModelMids, s => int.Parse(s) == mid);
         return i >= 0 ? i : null;
     }
+    public static bool IsPaw3950Model(int? index) => index is >= 0 and <= 7;
+    bool DpiSupported => IsPaw3950Model(_model is { } m ? ModelIndex(m.Mid) : null);
 
     public Bridge(Action<string> post, Func<Func<string?>, string?> onUi) { _post = post; _onUi = onUi; }
 
@@ -121,7 +145,13 @@ public sealed class Bridge
         sensorModes = new[] { "LP", "HP", "Corded" },
         ledEffects = MouseConfig.DpiLedEffects,
         buttons = ButtonOption.All.Select(b => new { b.Id, b.Group, b.Label }),
-        dpi = new { min = MouseConfig.DpiMin, max = MouseConfig.DpiMax, seg1 = MouseConfig.DpiSeg1Max, maxStages = Flash.MaxStages },
+        dpi = new { min = MouseConfig.DpiMin, max = MouseConfig.DpiMax, seg1 = MouseConfig.DpiSeg1Max, maxStages = Flash.MaxUserStages },
+        limits = new
+        {
+            debounce = new { min = MouseConfig.DebounceMin, max = MouseConfig.DebounceMax },
+            ledSpeed = new { min = MouseConfig.LedSpeedMin, max = MouseConfig.LedSpeedMax },
+            brightnessLevels = MouseConfig.BrightnessLevels.Length,
+        },
         version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
     };
 
@@ -164,23 +194,36 @@ public sealed class Bridge
             battery = _battery is null ? null : new { percent = _battery.Percent, millivolts = _battery.Millivolts },
             firmware = _version is ushort v ? $"{v >> 8}.{v & 0xFF:D2}" : null,
             model = _model is { } md ? ModelIndex(md.Mid) : null,
+            dpiSupported = DpiSupported,
         },
         config = ConfigDto.From(cfg),
         warnings = cfg.Warnings,
         hex = HexDump(img),
     };
 
-    object Preview(ConfigDto dto)
+    /// <summary>Monta a config a gravar, recusando DPI quando o sensor do modelo não é o 3950.</summary>
+    MouseConfig Edited(ConfigDto dto)
     {
         var img = _dev?.Image ?? throw new InvalidOperationException("Leia o mouse antes de aplicar.");
+        var before = MouseConfig.FromImage(img);
         var cfg = MouseConfig.FromImage(img); dto.ApplyTo(cfg);
+        if (!DpiSupported && !before.Dpi.SequenceEqual(cfg.Dpi))
+            throw new InvalidOperationException(
+                "O modelo deste mouse não foi identificado como PAW3950; por segurança o DPI não é gravado.");
+        return cfg;
+    }
+
+    object Preview(ConfigDto dto)
+    {
+        var img = _dev!.Image!;
+        var cfg = Edited(dto);
         return MouseConfig.Diff(img, cfg.ApplyTo(img)).Select(o => new { address = $"0x{o.Address:X4}", bytes = Packet.Hex(o.Bytes) });
     }
 
     object Apply(ConfigDto dto)
     {
         var dev = _dev ?? throw new InvalidOperationException("Nenhum mouse conectado.");
-        var cfg = MouseConfig.FromImage(dev.Image!); dto.ApplyTo(cfg);
+        var cfg = Edited(dto);
         int n = dev.Apply(cfg, _backupDir);
         Log($"{n} escrita(s) confirmadas. Backup em {_backupDir}");
         var state = Read();

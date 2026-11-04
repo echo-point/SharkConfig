@@ -210,6 +210,8 @@ input[type=range]::-webkit-slider-thumb { appearance: none; width: 18px; height:
 .track .line { position: absolute; left: 0; right: 0; top: 12px; height: 3px; border-radius: 3px; background: rgba(255,255,255,.12); }
 .track .hi { position: absolute; top: 12px; right: 0; height: 3px; border-radius: 0 3px 3px 0; background: rgba(255,179,64,.35); }
 .track .tick { position: absolute; top: 24px; transform: translateX(-50%); color: var(--graphite); font-size: 11px; }
+.mark:disabled { pointer-events: none; opacity: .8; }
+.num:disabled { color: var(--pencil); background: rgba(255,255,255,.04); }
 .mark { position: absolute; top: 13.5px; width: 16px; height: 16px; margin: -8px 0 0 -8px; padding: 0; border: 0; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--shelf), 0 1px 4px rgba(0,0,0,.5); }
 .mark.cur { width: 20px; height: 20px; margin: -10px 0 0 -10px; box-shadow: 0 0 0 2px var(--shelf), 0 0 0 3.5px rgba(255,255,255,.85), 0 1px 4px rgba(0,0,0,.5); }
 .mark span { position: absolute; bottom: 21px; left: 50%; transform: translateX(-50%); font-size: 11.5px; font-weight: 600; color: var(--pencil); white-space: nowrap; pointer-events: none; }

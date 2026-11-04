@@ -31,6 +31,9 @@ checksum = (0x55 − soma dos bytes [0..15]) & 0xFF
 
 - Modo mouse: `len` sem o bit `0x80` (o bit só é usado em modo teclado).
 - Resposta válida: checksum correto **e** `resp[1] == cmd`. O app oficial tenta 3 vezes, 100 ms cada.
+- Escrita (`0x07`): o mouse responde com o **eco idêntico** dos 17 bytes; o app oficial compara o
+  pacote inteiro e reenvia se não bater. Não existe comando de "salvar": as escritas já são definitivas.
+- O app oficial espera pelo menos 8 ms entre pacotes.
 - Leitura e escrita da memória em blocos de até 10 bytes.
 
 ## Comandos (`[1]`) [O]
@@ -51,8 +54,9 @@ checksum = (0x55 − soma dos bytes [0..15]) & 0xFF
 Respostas:
 - `0x04`: `resp[6]` = %, `resp[7]` = estado [?], `resp[8..9]` = tensão em mV (big-endian). [O]
 - `0x12`: `resp[6] << 8 | resp[7]`. [O]
-- `0x08`: dados a partir de `resp[6]`. [I]
-- `0xF1`: pedido com `len = 0x83`; `resp[6]` = CID, `resp[7]` = MID. [I]
+- `0x08`: dados a partir de `resp[6]`, no mesmo formato da memória. [O]
+- `0xF1`: pedido com `len = 0x83`; `resp[6]` = CID, `resp[7]` = MID. [I] O MID é comparado em
+  **decimal** com a lista do app oficial (01–05 e 10–12 = PAW3950; 13–22 = PAW3955, outra codificação de DPI).
 
 ## Memória de configuração [O]
 
@@ -62,15 +66,18 @@ Valores de 1 byte são gravados como **par `[v, 0x55 − v]`**. Registros de N b
 | Endereço | Campo | Padrão | Valores |
 |---|---|---|---|
 | `0x00` | taxa de atualização | 1 | `0x08`=125, `0x04`=250, `0x02`=500, `0x01`=1000, `0x10`=2000, `0x20`=4000, `0x40`=8000 Hz |
-| `0x02` | nº de estágios de DPI | 6 | 1–8 |
+| `0x02` | nº de estágios de DPI | 6 | 1–6 neste modelo (a memória tem 8 registros) |
 | `0x04` | estágio ativo | 2 | 0 a nº−1 |
 | `0x06`, `0x08` | ? | 0 | [?] |
 | `0x0A` | distância de levantamento | 0 | 0=0,7 mm, 1=1 mm, 2=2 mm |
 | `0x0C + 4i` | DPI legado do estágio i (3 bytes + chk) | | |
 | `0x2C + 4i` | cor do estágio i (R, G, B + chk) | | |
-| `0x4C`/`0x4E`/`0x50` | indicador de DPI: efeito, brilho, velocidade | 2, 0x80, 3 | efeito 0=desligado, 1=fixo, 2=respiração |
+| `0x4C` | indicador de DPI: efeito | 2 | 0=desligado, 1=fixo, 2=respiração |
+| `0x4E` | indicador de DPI: brilho | 0x80 | 10 níveis: 16, 30, 60, 90, 128, 150, 180, 210, 230, 255 |
+| `0x50` | indicador de DPI: velocidade | 3 | 1–5 |
+| `0x52` | indicador de DPI: ligado | 1 | 0 se o efeito é "desligado", senão 1 (gravado junto com o efeito) |
 | `0x60 + 4i` | função do botão i (tipo, p1, p2 + chk) | | ver Botões |
-| `0xA9` | debounce (ms) | 8 | |
+| `0xA9` | debounce (ms) | 8 | 1–20 |
 | `0xAB` | Motion Sync | 1 | 0/1 |
 | `0xAD` | dormir após (unidades de 10 s) | 6 | 1, 3, 6, 12, 18, 30, 60, 90, 180, 210 |
 | `0xAF` | correção de linha reta | 0 | 0/1 |
@@ -132,7 +139,6 @@ Tudo é gravado na memória do mouse e funciona sem software aberto:
 
 ## Pendências de validação
 
-- Formato exato da resposta de leitura (`0x08`) e da resposta à escrita.
 - Decodificação do DPI do 3950 (bits altos do flag).
 - Ordem física dos 5 botões do corpo e o que o 6º slot de botão (`0x60 + 4·5`) controla — o
   X8 Ultra não tem botão nem LED no centro do corpo (talvez um botão na base) [?].

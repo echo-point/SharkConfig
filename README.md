@@ -53,9 +53,15 @@ uma instalação do app oficial:
 
 ## Segurança
 
-- Só cinco comandos de leitura/escrita de configuração podem ser enviados; atualização de firmware,
-  troca de VID/PID, pareamento e reset de fábrica são bloqueados no código (`Packet.AllowedCommands`).
-- Só são gravados campos mapeados e alterados, com prévia dos pacotes e backup automático antes.
+- Só seis comandos podem ser enviados (cinco leituras e a gravação de configuração); atualização de
+  firmware, troca de VID/PID, pareamento e reset de fábrica são bloqueados no código (`Packet.AllowedCommands`).
+- Grava do mesmo jeito do app oficial: um pacote por campo alterado, só valores das mesmas listas e
+  faixas, com intervalo entre pacotes.
+- Antes de gravar: recusa se a leitura do mouse veio com algum campo inválido, confere cada pacote
+  contra as áreas permitidas e salva um backup. Durante: exige o eco exato de cada pacote. Depois:
+  relê tudo o que gravou e compara byte a byte.
+- DPI só é gravado quando o modelo é identificado como PAW3950, e nenhum botão pode ficar sem o
+  clique esquerdo.
 - O protocolo veio de análise estática e o modo simulador; alguns detalhes ainda precisam de
   confirmação em hardware — veja [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
