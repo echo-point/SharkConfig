@@ -76,7 +76,7 @@ tools/             sonda de coleções HID e atualização das fotos
 docs/PROTOCOL.md   protocolo documentado
 ```
 
-Consumo medido: cerca de 97 MB de RAM privada e ~0% de CPU parado; ao minimizar, a interface é
+Consumo medido: cerca de 38 MB de RAM privada e ~0% de CPU parado; ao minimizar, a interface é
 suspensa.
 
 ## Licença
