@@ -55,10 +55,11 @@ const SPOTS = [
   { x: 50, y: 12.4, side: "right" },   // 2 roda
   { x: 7.9, y: 51.4, side: "left" },   // 3 lateral traseiro
   { x: 7.9, y: 37.8, side: "left" },   // 4 lateral frontal
-  { x: 50, y: 56, side: "right" },     // 5 botão DPI (posição física a confirmar)
 ];
-const LEDS = [{ x: 50, y: 5.7 }, { x: 50, y: 52.2 }];
-const BUTTON_NAMES = ["Botão esquerdo", "Botão direito", "Roda", "Lateral traseiro", "Lateral frontal", "Botão DPI"];
+// O firmware tem um 6º slot de botão (0x60 + 4·5), mas o X8 Ultra não tem esse botão no corpo:
+// a interface não o mostra e nunca o altera (o valor lido é preservado).
+const LEDS = [{ x: 50, y: 5.7 }];      // indicador de DPI na frente, junto à roda
+const BUTTON_NAMES = ["Botão esquerdo", "Botão direito", "Roda", "Lateral traseiro", "Lateral frontal"];
 
 const ICON = {
   overview: "M12 3.5a5.5 5.5 0 0 1 5.5 5.5v6a5.5 5.5 0 0 1-11 0V9A5.5 5.5 0 0 1 12 3.5zM12 7v2.5",
@@ -197,19 +198,18 @@ const VIEWS = {
         <p>Use o receptor 8K ou o cabo USB-C e feche o app oficial da Attack Shark.</p>
         <div class="acts"><button class="btn accent" data-connect="real">Procurar mouse</button><button class="btn" data-connect="sim">Abrir simulador</button></div>
       </div></div>`;
+    // Visão geral é só informativa: nada aqui altera a configuração.
     const c = S.cfg, d = S.device;
-    const chips = c.dpi.slice(0, c.stageCount).map((v, i) =>
-      `<button class="chip" data-stage="${i}" aria-pressed="${i === c.currentStage}" style="--c:${c.colors[i]}"><i></i>${fmt(v)}</button>`).join("");
     return `<div class="overview">
       <div class="facts left">
-        <button class="fact big" data-go="dpi"><div class="v">${fmt(c.dpi[c.currentStage])}<small>DPI</small></div><div class="k">Estágio ${c.currentStage + 1} de ${c.stageCount}</div></button>
-        <button class="fact" data-go="performance"><div class="k">Taxa de atualização</div><div class="v">${fmt(hz(c.pollingCode))}<small>Hz</small></div></button>
+        <div class="fact big"><div class="v">${fmt(c.dpi[c.currentStage])}<small>DPI</small></div><div class="k">Estágio ${c.currentStage + 1} de ${c.stageCount}</div></div>
+        <div class="fact"><div class="k">Taxa de atualização</div><div class="v">${fmt(hz(c.pollingCode))}<small>Hz</small></div></div>
       </div>
-      <div class="center"><div class="stage">${photo()}</div><div class="stages">${chips}</div></div>
+      <div class="stage">${photo()}</div>
       <div class="facts">
         <div class="fact"><div class="k">Bateria</div><div class="v">${d.battery ? d.battery.percent : "—"}<small>%</small></div></div>
-        <button class="fact" data-go="performance"><div class="k">Distância de levantamento</div><div class="v">${S.opt.lod[c.lod].replace(" mm", "").replace(".", ",")}<small>mm</small></div></button>
-        <button class="fact" data-go="performance"><div class="k">Motion Sync</div><div class="v">${c.motionSync ? "Ligado" : "Desligado"}</div></button>
+        <div class="fact"><div class="k">Distância de levantamento</div><div class="v">${S.opt.lod[c.lod].replace(" mm", "").replace(".", ",")}<small>mm</small></div></div>
+        <div class="fact"><div class="k">Motion Sync</div><div class="v">${c.motionSync ? "Ligado" : "Desligado"}</div></div>
       </div></div>`;
   },
 
@@ -261,7 +261,7 @@ const VIEWS = {
     return `<div class="dpi-page">
       <div class="ruler"><div class="track" id="track"><i class="line"></i><i class="hi" style="left:${dpiPos(o.seg1)}" title="Acima de 30.000 o passo é 100"></i>${ticks}${marks}</div></div>
       <div class="workspace"><div class="stage">${photo()}</div>
-        <div class="inspector"><h2>Estágios</h2><p class="sub">Arraste na régua ou digite. O botão DPI alterna entre eles.</p>
+        <div class="inspector"><h2>Estágios</h2><p class="sub">Arraste na régua ou digite. Um botão com a função Alternar estágios percorre a lista.</p>
           <div class="rows">${rows}</div>
           <div class="acts-row"><button class="btn" id="add-stage" ${c.stageCount >= o.maxStages ? "disabled" : ""}>Adicionar estágio</button></div>
         </div></div></div>`;
@@ -271,7 +271,7 @@ const VIEWS = {
     const c = S.cfg, sel = S.btn;
     const groups = [...new Set(S.opt.buttons.map((b) => b.group))];
     const list = groups.map((g) => `<div class="group"><h3>${g}</h3><div class="choices">${S.opt.buttons.filter((b) => b.group === g).map((b) =>
-      `<button class="choice" role="menuitemradio" data-choice="${b.id}" aria-checked="${c.buttons[sel] === b.id}">${esc(b.label)}${g === "Mídia" ? '<span class="x">beta</span>' : ""}</button>`).join("")}</div></div>`).join("");
+      `<button class="choice" role="menuitemradio" data-choice="${b.id}" aria-checked="${c.buttons[sel] === b.id}">${esc(b.label)}</button>`).join("")}</div></div>`).join("");
     return `<div class="workspace" style="--insp:420px"><div class="stage">${photo({ spots: true })}</div>
       <div class="inspector"><h2>${BUTTON_NAMES[sel]}</h2>
         ${sel === 0 ? '<p class="sub" style="color:var(--caution)">Deixe o clique esquerdo em algum botão.</p>' : ""}
@@ -305,10 +305,6 @@ const VIEWS = {
 };
 
 const BIND = {
-  overview(v) {
-    $$("[data-stage]", v).forEach((b) => b.addEventListener("click", () => set((c) => { c.currentStage = Number(b.dataset.stage); }, true)));
-    $$("[data-go]", v).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
-  },
   performance: bindControls,
   lighting: bindControls,
   dpi(v) {

@@ -53,7 +53,8 @@ static class SelfTest
         bool blocked;
         try { Packet.Build((Cmd)0x0D); blocked = false; } catch (InvalidOperationException) { blocked = true; }
         Check(blocked, "opcode 0x0D (DFU) bloqueado");
-        Check(!Flash.IsWritable(0x0300, 2) && Flash.IsWritable(0x1B00, 6) && !Flash.IsWritable(0xB3, 2), "faixas de escrita");
+        Check(!Flash.IsWritable(0x0300, 2) && !Flash.IsWritable(0x0100, 2) && Flash.IsWritable(0x1B00, 6) && !Flash.IsWritable(0xB3, 2),
+            "faixas de escrita (atalhos, macros e 0xB3 bloqueados)");
 
         // 3. DPI encode/decode (round-trip em todo o range com os passos da UI)
         bool rt = true; int bad = 0;
@@ -91,11 +92,13 @@ static class SelfTest
             "aplicar + reler no simulador");
         Check(MouseConfig.Diff(sim.Flash, again.ApplyTo(sim.Flash)).Count == 0, "reaplicar sem mudanças = 0 escritas");
 
-        // 6. multimídia (experimental)
-        again.Buttons[3] = new ButtonAction(ButtonType.Combo, 0, 0) { Consumer = 0x00CD };
-        var dev2 = new MouseDevice(sim); dev2.ReadFlash(); dev2.Apply(again, Path.GetTempPath());
-        var mm = MouseConfig.FromImage(new MouseDevice(sim).ReadFlash());
-        Check(mm.Buttons[3].Consumer == 0x00CD, "botão multimídia Play/Pause persiste");
+        // 6. função de botão que a UI não oferece (ex.: mídia) é preservada sem escrita
+        sim.Flash.SetRecord(Flash.Button(3), [(byte)ButtonType.Combo, 0, 0]);
+        var keep = MouseConfig.FromImage(new MouseDevice(sim).ReadFlash());
+        var keepDto = UI.ConfigDto.From(keep);
+        var keepBack = MouseConfig.FromImage(sim.Flash); keepDto.ApplyTo(keepBack);
+        Check(keepDto.Buttons[3].StartsWith("custom:") && MouseConfig.Diff(sim.Flash, keepBack.ApplyTo(sim.Flash)).Count == 0,
+            "função não suportada é mantida intacta");
 
         // 7. ponte da UI web: config → JSON → config não pode gerar escritas
         var baseImg = sim.Flash.Clone();

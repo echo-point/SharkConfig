@@ -34,15 +34,13 @@ public static class Flash
     public static int DpiLegacy(int i) => 0x0C + 4 * i;      // 3 bytes + chk
     public static int DpiColor(int i) => 0x2C + 4 * i;       // R,G,B + chk
     public static int Button(int i) => 0x60 + 4 * i;         // tipo,p1,p2 + chk
-    public static int Shortcut(int i) => 0x100 + 0x20 * i;   // bloco de atalho (0x20)
-    public static int Macro(int i) => 0x300 + 0x180 * i;     // não suportado na v0.1
     public static int Dpi(int i) => 0x1B00 + 6 * i;          // Xlo,Xhi,Ylo,Yhi,flag + chk
+    // Atalhos/combinações (0x100+) e macros (0x300+) existem na memória, mas o app não os usa.
 
     /// <summary>Regiões lidas do mouse (em blocos de 10 bytes).</summary>
     public static readonly (int Start, int Length)[] ReadRegions =
     [
         (0x000, 0x0F0),             // escalares, DPI legado, cores, LED, botões, sensor
-        (0x100, 0x20 * 6),          // atalhos dos 6 botões físicos
         (0x1B00, 6 * MaxStages),    // tabela de DPI X/Y
     ];
 
@@ -51,7 +49,7 @@ public static class Flash
     [
         (0x00, 0x0B), (0x2C, 0x4B), (0x4C, 0x53), (0x60, 0x9F),
         (0xA9, 0xB2), (0xB5, 0xBA),   // 0xB3 (desconhecido) fica de fora
-        (0x100, 0x2FF), (0x1B00, 0x1B2F),
+        (0x1B00, 0x1B2F),
     ];
 
     public static bool IsWritable(int start, int length) =>

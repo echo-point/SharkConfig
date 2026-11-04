@@ -180,13 +180,6 @@ input[type=range]::-webkit-slider-thumb { appearance: none; width: 18px; height:
 .fact .v { font: 600 24px/1.2 var(--font-display); letter-spacing: -.02em; }
 .fact .v small { margin-left: 3px; color: var(--pencil); font: 500 13px var(--font); letter-spacing: 0; }
 .fact.big .v { font-size: 46px; letter-spacing: -.035em; line-height: 1.05; }
-button.fact:hover .k { color: var(--paper); }
-.center { display: grid; grid-template-rows: 1fr auto; min-height: 0; min-width: 0; }
-.stages { display: flex; gap: 6px; justify-content: center; flex-wrap: nowrap; padding: 8px 0 6px; }
-.chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px 0 9px; border: 0; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--pencil); font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background .15s; }
-.chip:hover { background: rgba(255,255,255,.1); color: var(--paper); }
-.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-.chip[aria-pressed="true"] { background: rgba(255,255,255,.14); color: var(--paper); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); }
 .empty { position: absolute; left: 50%; bottom: 6%; z-index: 3; width: 360px; transform: translateX(-50%); text-align: center; }
 .empty h2 { margin: 0 0 4px; font: 600 18px/1.25 var(--font-display); }
 .empty p { margin: 0 0 14px; color: var(--pencil); font-size: 13px; }
@@ -209,7 +202,6 @@ button.fact:hover .k { color: var(--paper); }
 .choice { display: flex; align-items: center; gap: 8px; height: 29px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--paper); font-size: 12.5px; text-align: left; white-space: nowrap; overflow: hidden; }
 .choice:hover { background: rgba(255,255,255,.06); }
 .choice[aria-checked="true"] { background: rgba(10,132,255,.22); box-shadow: inset 0 0 0 .5px rgba(10,132,255,.6); }
-.choice .x { margin-left: auto; color: var(--caution); font-size: 10.5px; }
 
 /* ---------- DPI ---------- */
 .dpi-page { display: grid; grid-template-rows: auto 1fr; gap: 14px; height: 100%; min-height: 0; }

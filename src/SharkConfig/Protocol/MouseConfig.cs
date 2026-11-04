@@ -8,11 +8,7 @@ public enum ButtonType : byte
     Macro = 0x06, PollingSwitch = 0x07, ConfigSwitch = 0x09, Undefined = 0x10, VScroll = 0x0B, DpiLock = 0x0C,
 }
 
-public record struct ButtonAction(ButtonType Type, byte P1, byte P2)
-{
-    /// <summary>Código consumer (multimídia), quando Type==Combo e o atalho é kind 2.</summary>
-    public ushort? Consumer { get; init; }
-}
+public record struct ButtonAction(ButtonType Type, byte P1, byte P2);
 
 /// <summary>
 /// Modelo legível da configuração. Parse a partir da <see cref="FlashImage"/> e
@@ -126,21 +122,9 @@ public sealed class MouseConfig
         {
             var b = img.GetRecord(Flash.Button(i), 3);
             if (b is null) { c.Warnings.Add($"Botão {i + 1} inválido"); continue; }
-            var act = new ButtonAction((ButtonType)b[0], b[1], b[2]);
-            if (act.Type == ButtonType.Combo) act = act with { Consumer = ReadConsumer(img, i) };
-            c.Buttons[i] = act;
+            c.Buttons[i] = new ButtonAction((ButtonType)b[0], b[1], b[2]);
         }
         return c;
-    }
-
-    static ushort? ReadConsumer(FlashImage img, int i)
-    {
-        int a = Flash.Shortcut(i);
-        int n = img.Data[a];
-        if (n < 2 || n > 6 || img.Data[a + 1 + 3 * n] != Packet.Checksum(img.Data.AsSpan(a, 1 + 3 * n))) return null;
-        byte e = img.Data[a + 1];
-        if ((e & 0x0F) != 2) return null; // kind 2 = multimídia [I]
-        return (ushort)(img.Data[a + 2] | img.Data[a + 3] << 8);
     }
 
     // ---------------- aplicar ----------------
@@ -180,13 +164,6 @@ public sealed class MouseConfig
             var b = Buttons[i];
             if (old.Buttons[i] == b) continue;
             img.SetRecord(Flash.Button(i), [(byte)b.Type, b.P1, b.P2]);
-            if (b.Type == ButtonType.Combo && b.Consumer is ushort code)
-            {
-                // atalho: 2 eventos (pressiona/solta) kind 2 [I]
-                byte lo = (byte)code, hi = (byte)(code >> 8);
-                byte[] blk = [2, 0x80 | 2, lo, hi, 0x40 | 2, lo, hi];
-                img.SetRecord(Flash.Shortcut(i), blk);
-            }
         }
         return img;
     }
@@ -201,7 +178,7 @@ public sealed class MouseConfig
                      Flash.SensorMode })
             fields.Add((a, 2));
         for (int i = 0; i < Flash.MaxStages; i++) { fields.Add((Flash.DpiColor(i), 4)); fields.Add((Flash.Dpi(i), 6)); }
-        for (int i = 0; i < 6; i++) { fields.Add((Flash.Button(i), 4)); fields.Add((Flash.Shortcut(i), 0x20)); }
+        for (int i = 0; i < 6; i++) fields.Add((Flash.Button(i), 4));
 
         var ops = new List<(int, byte[])>();
         foreach (var (addr, len) in fields)

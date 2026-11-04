@@ -12,7 +12,7 @@ Interface inspirada no macOS e no Logitech G HUB, protocolo reconstruído por en
 |---|---|
 | Desempenho | taxa de atualização 125–8000 Hz, modo do sensor (LP/HP/Corded), distância de levantamento, Motion Sync, correção de linha reta, controle de ondulação, desempenho máximo, tempo para dormir, debounce |
 | Sensibilidade | 1 a 8 estágios de 50 a 42.000 DPI, cor de cada estágio, estágio ativo |
-| Botões | cliques, voltar/avançar, DPI (ciclo, +, −, travar), rolagem, troca de taxa, mídia (beta), desativar |
+| Botões | cliques, voltar/avançar, DPI (ciclo, +, −, travar), rolagem |
 | Iluminação | efeito, brilho e velocidade do indicador de DPI |
 | Avançado | leitura da memória do mouse, backup e restauração |
 

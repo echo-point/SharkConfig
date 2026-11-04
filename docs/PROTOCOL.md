@@ -134,6 +134,6 @@ Tudo é gravado na memória do mouse e funciona sem software aberto:
 
 - Formato exato da resposta de leitura (`0x08`) e da resposta à escrita.
 - Decodificação do DPI do 3950 (bits altos do flag).
-- Ordem física dos 6 botões e posição do botão DPI.
-- Formato do bloco de mídia/combinação.
+- Ordem física dos 5 botões do corpo e o que o 6º slot de botão (`0x60 + 4·5`) controla — o
+  X8 Ultra não tem botão nem LED no centro do corpo (talvez um botão na base) [?].
 - Campos marcados com ?.
