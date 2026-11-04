@@ -1,0 +1,14 @@
+# build
+bin/
+obj/
+*.user
+.vs/
+
+# backups da memória do mouse gerados pelo app
+backups/
+
+# binários e firmwares de terceiros nunca devem entrar no repositório
+*.exe
+*.dll
+*.msi
+*.bin

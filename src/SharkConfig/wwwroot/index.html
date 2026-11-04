@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>SharkConfig</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="rail">
+      <div class="device" id="device"></div>
+      <nav class="nav" id="nav" aria-label="Seções"></nav>
+      <div class="rail-foot" id="rail-foot"></div>
+    </aside>
+
+    <main class="main">
+      <header class="head">
+        <div>
+          <h1 id="title"></h1>
+          <p id="subtitle"></p>
+        </div>
+        <div class="progress" id="progress"><i></i></div>
+      </header>
+      <section class="view" id="view"></section>
+
+      <div class="changes" id="changes" role="status">
+        <span id="changes-text"></span>
+        <button class="btn plain" id="discard">Descartar</button>
+        <button class="btn accent" id="apply">Aplicar no mouse</button>
+      </div>
+    </main>
+  </div>
+
+  <div class="sheet-backdrop" id="sheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <h2 id="sheet-title">Aplicar no mouse</h2>
+      <p id="sheet-text"></p>
+      <details class="packets"><summary>Ver pacotes</summary><pre id="sheet-packets"></pre></details>
+      <div class="sheet-actions">
+        <button class="btn" id="sheet-cancel">Cancelar</button>
+        <button class="btn accent" id="sheet-confirm">Aplicar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="alert"></div>
+  <script src="app.js"></script>
+</body>
+</html>

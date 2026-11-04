@@ -1,0 +1,433 @@
+"use strict";
+// SharkConfig v0.3 — interface. Fala com C# (UI/Bridge.cs) via WebView2 postMessage.
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const fmt = (n) => Number(n).toLocaleString("pt-BR");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// ---------------- encaixe na janela: quadro 1200×760 escalado inteiro ----------------
+const FRAME_W = 1200, FRAME_H = 760;
+function fit() {
+  const s = Math.max(0.6, Math.min(1.6, Math.min(innerWidth / FRAME_W, innerHeight / FRAME_H)));
+  document.body.style.zoom = s;
+  const app = $("#app");
+  app.style.width = innerWidth / s + "px";   // a sobra horizontal/vertical vira espaço, não barra de rolagem
+  app.style.height = innerHeight / s + "px";
+}
+let fitQueued = false;
+addEventListener("resize", () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(() => { fitQueued = false; fit(); }); } });
+
+// ---------------- ponte ----------------
+const bridge = (() => {
+  const wv = window.chrome?.webview;
+  let seq = 0;
+  const pending = new Map(), listeners = {};
+  wv?.addEventListener("message", (e) => {
+    const m = e.data;
+    if (m.event) return (listeners[m.event] || []).forEach((f) => f(m));
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    m.ok ? p.res(m.result) : p.rej(new Error(m.error));
+  });
+  return {
+    call(cmd, args) {
+      if (!wv) return Promise.reject(new Error("Abra esta interface pelo SharkConfig.exe."));
+      return new Promise((res, rej) => { const id = ++seq; pending.set(id, { res, rej }); wv.postMessage({ id, cmd, args }); });
+    },
+    on(ev, f) { (listeners[ev] ??= []).push(f); },
+  };
+})();
+
+// ---------------- estado ----------------
+const S = { opt: null, device: null, cfg: null, saved: null, warnings: [], hex: "", page: "overview", btn: 0, busy: false, logs: [],
+  model: Number(store.get("model") ?? 0) };
+
+// Fotos oficiais (Picture/Buttoninterface/mouse{i}.png, 432×356). Posições em % da imagem.
+// Fotos oficiais (Picture/Buttoninterface/mouse{i}.png) recortadas para 202×356 (x 115–317 do original 432×356).
+// Posições em % da imagem recortada.
+const SPOTS = [
+  { x: 27.7, y: 20.5, side: "left" },  // 0 esquerdo
+  { x: 72.3, y: 20.5, side: "right" }, // 1 direito
+  { x: 50, y: 12.4, side: "right" },   // 2 roda
+  { x: 7.9, y: 51.4, side: "left" },   // 3 lateral traseiro
+  { x: 7.9, y: 37.8, side: "left" },   // 4 lateral frontal
+  { x: 50, y: 56, side: "right" },     // 5 botão DPI (posição física a confirmar)
+];
+const LEDS = [{ x: 50, y: 5.7 }, { x: 50, y: 52.2 }];
+const BUTTON_NAMES = ["Botão esquerdo", "Botão direito", "Roda", "Lateral traseiro", "Lateral frontal", "Botão DPI"];
+
+const ICON = {
+  overview: "M12 3.5a5.5 5.5 0 0 1 5.5 5.5v6a5.5 5.5 0 0 1-11 0V9A5.5 5.5 0 0 1 12 3.5zM12 7v2.5",
+  performance: "M4.5 15.5a7.5 7.5 0 1 1 15 0M12 15.5l3.5-4.5",
+  dpi: "M12 4v3M12 17v3M4 12h3M17 12h3M12 9.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z",
+  buttons: "M8.5 4.5l9.5 8.5-4.6.9 2.8 5.6-1.9.9-2.8-5.6-3 3.3z",
+  lighting: "M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z",
+  advanced: "M5 8h9M18 8h1M5 16h3M12 16h7M16 6v4M10 14v4",
+};
+const PAGES = {
+  overview: { title: "Visão geral", sub: () => S.device ? connectionText() : "Nenhum mouse conectado" },
+  performance: { title: "Desempenho", sub: () => "Taxa de atualização, sensor e energia" },
+  dpi: { title: "Sensibilidade", sub: () => "Até 8 estágios, de 50 a 42.000 DPI" },
+  buttons: { title: "Botões", sub: () => "Clique em um botão no mouse para trocar a função" },
+  lighting: { title: "Iluminação", sub: () => "Indicador de DPI" },
+  advanced: { title: "Avançado", sub: () => "Memória do mouse, aparência e registro" },
+};
+
+const stageColor = () => S.cfg ? S.cfg.colors[S.cfg.currentStage] : "#0A84FF";
+const hz = (code) => S.opt?.pollingRates.find((p) => p.code === code)?.hz ?? 0;
+const photoSrc = () => `img/mouse${S.model}.png`;
+function connectionText() {
+  if (S.device.simulated) return "Simulador — as mudanças não chegam a um mouse real";
+  return /dongle/.test(S.device.description) ? "Conectado pelo receptor 8K" : "Conectado pelo cabo";
+}
+
+// ---------------- alterações ----------------
+function changeCount() {
+  if (!S.cfg || !S.saved) return 0;
+  let n = 0;
+  for (const k of Object.keys(S.cfg)) {
+    const a = S.cfg[k], b = S.saved[k];
+    if (Array.isArray(a)) a.forEach((v, i) => { if (v !== b[i]) n++; });
+    else if (a !== b) n++;
+  }
+  return n;
+}
+function refreshChanges() {
+  const n = changeCount();
+  $("#changes").classList.toggle("show", n > 0);
+  $("#changes-text").textContent = n === 1 ? "1 alteração não aplicada" : `${n} alterações não aplicadas`;
+  document.documentElement.style.setProperty("--stage", stageColor());
+}
+function set(mutator, rerender = false) {
+  mutator(S.cfg);
+  refreshChanges();
+  if (rerender) render(); else updateLeds();
+}
+
+// ---------------- foto ----------------
+function photo({ spots = false, leds = false } = {}) {
+  const c = S.cfg;
+  const ledHtml = leds && c ? LEDS.map((l) => {
+    const op = c.ledEffect === 0 ? 0 : 0.35 + 0.65 * (c.ledBrightness / 255);
+    return `<i class="led ${c.ledEffect === 2 ? "breathe" : ""}" style="left:${l.x}%;top:${l.y}%;opacity:${op};--speed:${(11 - c.ledSpeed) * 0.45 + 0.8}s"></i>`;
+  }).join("") : "";
+  const label = (id) => S.opt.buttons.find((b) => b.id === id)?.label ?? "Função personalizada";
+  const spotHtml = spots ? SPOTS.map((h, i) => `
+    <button class="hs" data-hs="${i}" style="left:${h.x}%;top:${h.y}%" aria-pressed="${i === S.btn}" aria-label="${BUTTON_NAMES[i]}">${i + 1}</button>
+    <span class="tag ${h.side} ${i === S.btn ? "sel" : ""}" style="--x:${h.x}%;top:${h.y}%">${esc(label(c.buttons[i]))}</span>`).join("") : "";
+  return `<div class="photo ${c ? "" : "off"}">
+    <i class="floor"></i><img class="shot" src="${photoSrc()}" alt="Attack Shark X8 Ultra" draggable="false">
+    ${ledHtml}${spotHtml}</div>`;
+}
+function updateLeds() {
+  // atualização barata do preview de LED sem refazer a página
+  if (S.page !== "lighting" || !S.cfg) return;
+  const c = S.cfg, op = c.ledEffect === 0 ? 0 : 0.35 + 0.65 * (c.ledBrightness / 255);
+  $$(".photo .led").forEach((l) => { l.style.opacity = op; l.classList.toggle("breathe", c.ledEffect === 2); l.style.setProperty("--speed", `${(11 - c.ledSpeed) * 0.45 + 0.8}s`); });
+}
+
+// ---------------- shell ----------------
+function renderRail() {
+  const d = S.device, bat = d?.battery;
+  $("#device").innerHTML = `
+    <img src="${photoSrc()}" alt="">
+    <div><div class="device-name">X8 Ultra</div>
+      <div class="device-status"><i class="dot ${d ? (d.simulated ? "sim" : "on") : ""}"></i>${d ? (d.simulated ? "Simulador" : /dongle/.test(d.description) ? "Receptor 8K" : "Cabo USB") : "Desconectado"}</div></div>
+    ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`;
+  $("#nav").innerHTML = Object.entries(PAGES).map(([key, p]) => `
+    <button data-page="${key}" ${S.page === key ? 'aria-current="page"' : ""} ${!S.cfg && key !== "overview" && key !== "advanced" ? "disabled" : ""}>
+      <svg viewBox="0 0 24 24"><path d="${ICON[key]}"/></svg>${p.title}</button>`).join("");
+  $("#rail-foot").innerHTML = d
+    ? `<button class="btn block" id="reread">Ler o mouse de novo</button><small>${d.firmware ? `Firmware ${d.firmware}` : ""}</small>`
+    : `<button class="btn accent block" data-connect="real">Procurar mouse</button><button class="btn block" data-connect="sim">Abrir simulador</button><small>SharkConfig ${S.opt?.version ?? ""} — não oficial</small>`;
+}
+
+function render() {
+  const page = S.cfg || S.page === "advanced" ? S.page : "overview"; // páginas do mouse exigem leitura
+  $("#title").textContent = PAGES[page].title;
+  $("#subtitle").textContent = PAGES[page].sub();
+  renderRail();
+  const view = $("#view");
+  view.innerHTML = VIEWS[page]();
+  BIND[page]?.(view);
+  refreshChanges();
+}
+
+// ---------------- componentes ----------------
+const seg = (name, items, value) => `<div class="seg" data-seg="${name}">${items.map((it) =>
+  `<button data-v="${it.v}" aria-pressed="${String(it.v) === String(value)}">${it.label}</button>`).join("")}</div>`;
+const toggle = (name, on) => `<label class="switch"><input type="checkbox" data-toggle="${name}" ${on ? "checked" : ""}><i></i></label>`;
+const select = (name, items, value) => `<div class="select"><select data-select="${name}">${items.map((it) =>
+  `<option value="${it.v}" ${String(it.v) === String(value) ? "selected" : ""}>${esc(it.label)}</option>`).join("")}</select></div>`;
+const row = (title, hint, control) => `<div class="row"><div class="label">${title}${hint ? `<span>${hint}</span>` : ""}</div>${control}</div>`;
+const pct = (v, min, max) => `${((v - min) / (max - min)) * 100}%`;
+const slider = (name, v, min, max, out) => `<div class="slider"><input type="range" data-range="${name}" min="${min}" max="${max}" value="${v}" style="--p:${pct(v, min, max)}"><output>${out}</output></div>`;
+// trilha de DPI em escala raiz quadrada: espalha os valores baixos, onde ficam os estágios de uso real
+const dpiPos = (v) => { const o = S.opt.dpi; return `${Math.sqrt((v - o.min) / (o.max - o.min)) * 100}%`; };
+const dpiAt = (f) => { const o = S.opt.dpi; return o.min + Math.pow(Math.min(1, Math.max(0, f)), 2) * (o.max - o.min); };
+const snapDpi = (x) => { const o = S.opt.dpi; x = Math.min(o.max, Math.max(o.min, x)); const st = x > o.seg1 ? 100 : 50; return Math.round(x / st) * st; };
+
+function bindControls(root) {
+  $$("[data-seg]", root).forEach((g) => g.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    $$("button", g).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    set((c) => { c[g.dataset.seg] = Number(b.dataset.v); }, g.dataset.seg === "pollingCode");
+  }));
+  $$("[data-toggle]", root).forEach((i) => i.addEventListener("change", () => set((c) => { c[i.dataset.toggle] = i.checked; })));
+  $$("[data-select]", root).forEach((s) => s.addEventListener("change", () => set((c) => { c[s.dataset.select] = Number(s.value); })));
+  $$("[data-range]", root).forEach((r) => r.addEventListener("input", () => {
+    const min = Number(r.min), max = Number(r.max), v = Number(r.value), name = r.dataset.range;
+    r.style.setProperty("--p", pct(v, min, max));
+    r.nextElementSibling.textContent = OUT[name](v);
+    set((c) => { c[name] = v; });
+    if (name === "debounce") $("#debounce-warn").hidden = v >= 4;
+  }));
+}
+const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${Math.round(v / 2.55)}%`, ledSpeed: (v) => String(v) };
+
+// ---------------- páginas ----------------
+const VIEWS = {
+  overview() {
+    if (!S.cfg) return `<div class="stage" style="height:100%">${photo()}
+      <div class="empty"><h2>Conecte o seu X8 Ultra</h2>
+        <p>Use o receptor 8K ou o cabo USB-C e feche o app oficial da Attack Shark.</p>
+        <div class="acts"><button class="btn accent" data-connect="real">Procurar mouse</button><button class="btn" data-connect="sim">Abrir simulador</button></div>
+      </div></div>`;
+    const c = S.cfg, d = S.device;
+    const chips = c.dpi.slice(0, c.stageCount).map((v, i) =>
+      `<button class="chip" data-stage="${i}" aria-pressed="${i === c.currentStage}" style="--c:${c.colors[i]}"><i></i>${fmt(v)}</button>`).join("");
+    return `<div class="overview">
+      <div class="facts left">
+        <button class="fact big" data-go="dpi"><div class="v">${fmt(c.dpi[c.currentStage])}<small>DPI</small></div><div class="k">Estágio ${c.currentStage + 1} de ${c.stageCount}</div></button>
+        <button class="fact" data-go="performance"><div class="k">Taxa de atualização</div><div class="v">${fmt(hz(c.pollingCode))}<small>Hz</small></div></button>
+      </div>
+      <div class="center"><div class="stage">${photo()}</div><div class="stages">${chips}</div></div>
+      <div class="facts">
+        <div class="fact"><div class="k">Bateria</div><div class="v">${d.battery ? d.battery.percent : "—"}<small>%</small></div></div>
+        <button class="fact" data-go="performance"><div class="k">Distância de levantamento</div><div class="v">${S.opt.lod[c.lod].replace(" mm", "").replace(".", ",")}<small>mm</small></div></button>
+        <button class="fact" data-go="performance"><div class="k">Motion Sync</div><div class="v">${c.motionSync ? "Ligado" : "Desligado"}</div></button>
+      </div></div>`;
+  },
+
+  performance() {
+    const c = S.cfg, o = S.opt;
+    const rates = o.pollingRates.map((p) => ({ v: p.code, label: p.hz >= 1000 ? `${p.hz / 1000}K` : String(p.hz) }));
+    const times = o.sleepOptions.map((s) => ({ v: s.units, label: s.label }));
+    const high = hz(c.pollingCode) > 1000 && !/cabo/.test(S.device.description);
+    return `<div class="workspace" style="--insp:640px"><div class="stage">${photo()}</div>
+      <div class="inspector"><div class="cols">
+        <div>
+          <div class="group"><h3>Taxa de atualização (Hz)</h3>${seg("pollingCode", rates, c.pollingCode)}
+            ${high ? '<p class="note warn">Acima de 1000 Hz sem fio, a bateria dura bem menos.</p>' : ""}</div>
+          <div class="group"><h3>Modo do sensor</h3>${seg("sensorMode", o.sensorModes.map((m, i) => ({ v: i, label: m })), c.sensorMode)}
+            <p class="note">LP economiza bateria. HP e Corded priorizam resposta.</p></div>
+          <div class="group"><h3>Distância de levantamento</h3>${seg("lod", o.lod.map((m, i) => ({ v: i, label: m.replace(".", ",") })), c.lod)}</div>
+          <div class="group"><h3>Rastreamento</h3><div class="rows">
+            ${row("Motion Sync", "", toggle("motionSync", c.motionSync))}
+            ${row("Correção de linha reta", "", toggle("angleSnap", c.angleSnap))}
+            ${row("Controle de ondulação", "", toggle("ripple", c.ripple))}
+          </div></div>
+        </div>
+        <div>
+          <div class="group"><h3>Energia</h3><div class="rows">
+            ${row("Desempenho máximo", "Sensor no modo mais rápido", toggle("performance", c.performance))}
+            ${row("Voltar ao normal após", "", select("performanceTimeout", times.slice(0, 8), c.performanceTimeout))}
+            ${row("Dormir após", "Tempo parado até o repouso", select("sleep", times, c.sleep))}
+          </div></div>
+          <div class="group"><h3>Cliques</h3><div class="rows"><div class="row stack">
+            <div class="label">Tempo de resposta<span>Debounce dos botões</span></div>${slider("debounce", c.debounce, 0, 30, OUT.debounce(c.debounce))}
+          </div></div><p class="note warn" id="debounce-warn" ${c.debounce < 4 ? "" : "hidden"}>Valores muito baixos podem gerar clique duplo.</p></div>
+        </div>
+      </div></div></div>`;
+  },
+
+  dpi() {
+    const c = S.cfg, o = S.opt.dpi;
+    const ticks = [50, 1000, 2500, 5000, 10000, 20000, 30000, 42000].map((t) =>
+      `<span class="tick" style="left:${dpiPos(t)}">${t >= 1000 ? fmt(t / 1000) + "K" : t}</span>`).join("");
+    const marks = c.dpi.slice(0, c.stageCount).map((v, i) =>
+      `<button class="mark ${i === c.currentStage ? "cur" : ""}" data-mark="${i}" style="left:${dpiPos(v)};--c:${c.colors[i]}" aria-label="Estágio ${i + 1}: ${fmt(v)} DPI"><span>${fmt(v)}</span></button>`).join("");
+    const rows = c.dpi.slice(0, c.stageCount).map((v, i) => `<div class="row"><div class="srow" style="width:100%">
+        <label class="swatch" style="--c:${c.colors[i]}" title="Cor do estágio"><input type="color" data-color="${i}" value="${c.colors[i]}"></label>
+        <span>Estágio ${i + 1}</span>
+        <input class="num" type="number" data-dpi="${i}" value="${v}" min="${o.min}" max="${o.max}" step="${v >= o.seg1 ? 100 : 50}" aria-label="DPI do estágio ${i + 1}">
+        <button class="use" data-current="${i}" aria-pressed="${i === c.currentStage}">${i === c.currentStage ? "Ativo" : "Usar"}</button>
+        <button class="del" data-remove="${i}" ${c.stageCount <= 1 ? "disabled" : ""} aria-label="Remover estágio ${i + 1}">×</button>
+      </div></div>`).join("");
+    return `<div class="dpi-page">
+      <div class="ruler"><div class="track" id="track"><i class="line"></i><i class="hi" style="left:${dpiPos(o.seg1)}" title="Acima de 30.000 o passo é 100"></i>${ticks}${marks}</div></div>
+      <div class="workspace"><div class="stage">${photo()}</div>
+        <div class="inspector"><h2>Estágios</h2><p class="sub">Arraste na régua ou digite. O botão DPI alterna entre eles.</p>
+          <div class="rows">${rows}</div>
+          <div class="acts-row"><button class="btn" id="add-stage" ${c.stageCount >= o.maxStages ? "disabled" : ""}>Adicionar estágio</button></div>
+        </div></div></div>`;
+  },
+
+  buttons() {
+    const c = S.cfg, sel = S.btn;
+    const groups = [...new Set(S.opt.buttons.map((b) => b.group))];
+    const list = groups.map((g) => `<div class="group"><h3>${g}</h3><div class="choices">${S.opt.buttons.filter((b) => b.group === g).map((b) =>
+      `<button class="choice" role="menuitemradio" data-choice="${b.id}" aria-checked="${c.buttons[sel] === b.id}">${esc(b.label)}${g === "Mídia" ? '<span class="x">beta</span>' : ""}</button>`).join("")}</div></div>`).join("");
+    return `<div class="workspace" style="--insp:420px"><div class="stage">${photo({ spots: true })}</div>
+      <div class="inspector"><h2>${BUTTON_NAMES[sel]}</h2>
+        ${sel === 0 ? '<p class="sub" style="color:var(--caution)">Deixe o clique esquerdo em algum botão.</p>' : ""}
+        <div class="groups">${list}</div></div></div>`;
+  },
+
+  lighting() {
+    const c = S.cfg;
+    return `<div class="workspace"><div class="stage">${photo({ leds: true })}</div>
+      <div class="inspector"><div class="group"><h3>Efeito</h3>${seg("ledEffect", S.opt.ledEffects.map((m, i) => ({ v: i, label: m })), c.ledEffect)}
+        <p class="note">A cor segue o estágio de DPI ativo. Troque as cores em Sensibilidade.</p></div>
+        <div class="group"><h3>Ajustes</h3><div class="rows">
+          <div class="row stack"><div class="label">Brilho</div>${slider("ledBrightness", c.ledBrightness, 0, 255, OUT.ledBrightness(c.ledBrightness))}</div>
+          <div class="row stack"><div class="label">Velocidade da respiração</div>${slider("ledSpeed", c.ledSpeed, 0, 10, OUT.ledSpeed(c.ledSpeed))}</div>
+        </div></div></div></div>`;
+  },
+
+  advanced() {
+    const warn = S.warnings.length ? `<p class="note warn">${S.warnings.map(esc).join("<br>")}</p>` : "";
+    const models = Array.from({ length: 18 }, (_, i) =>
+      `<button class="model" data-model="${i}" aria-pressed="${i === S.model}" aria-label="Foto ${i + 1}"><img src="img/mouse${i}.png" alt="" loading="lazy"></button>`).join("");
+    return `<div class="adv">
+      <div class="inspector"><h2>Memória do mouse</h2><p class="sub">A configuração fica gravada no próprio mouse. Os backups vão para a pasta do app.</p>
+        <div class="acts-row"><button class="btn" id="export" ${S.cfg ? "" : "disabled"}>Exportar backup</button><button class="btn" id="import" ${S.cfg ? "" : "disabled"}>Carregar backup</button></div>
+        ${warn}<pre class="hex">${S.hex ? esc(S.hex) : "Leia um mouse para ver a memória."}</pre></div>
+      <div class="right">
+        <div class="inspector"><h2>Aparência</h2><p class="sub">${S.device?.model != null ? "Detectada pelo modelo do mouse. Pode trocar se quiser." : "Escolha a foto que corresponde ao seu mouse."}</p><div class="models">${models}</div></div>
+        <div class="inspector"><h2>Registro</h2><div class="log" id="log">${S.logs.slice(-60).map(logLine).join("") || "<div>Sem atividade ainda.</div>"}</div></div>
+      </div></div>`;
+  },
+};
+
+const BIND = {
+  overview(v) {
+    $$("[data-stage]", v).forEach((b) => b.addEventListener("click", () => set((c) => { c.currentStage = Number(b.dataset.stage); }, true)));
+    $$("[data-go]", v).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+  },
+  performance: bindControls,
+  lighting: bindControls,
+  dpi(v) {
+    const track = $("#track", v);
+    $$("[data-mark]", v).forEach((m) => m.addEventListener("pointerdown", (e) => {
+      const i = Number(m.dataset.mark); m.setPointerCapture(e.pointerId);
+      m.onpointermove = (ev) => {
+        const r = track.getBoundingClientRect();
+        const val = snapDpi(dpiAt((ev.clientX - r.left) / r.width));
+        S.cfg.dpi[i] = val; m.style.left = dpiPos(val); m.firstChild.textContent = fmt(val);
+        const inp = $(`[data-dpi="${i}"]`, v); if (inp) inp.value = val;
+        refreshChanges();
+      };
+      m.onpointerup = () => { m.onpointermove = m.onpointerup = null; render(); };
+    }));
+    $$("[data-dpi]", v).forEach((inp) => inp.addEventListener("change", () => set((c) => { c.dpi[Number(inp.dataset.dpi)] = snapDpi(Number(inp.value)); }, true)));
+    $$("[data-color]", v).forEach((inp) => inp.addEventListener("input", () => {
+      const i = Number(inp.dataset.color);
+      inp.parentElement.style.setProperty("--c", inp.value);
+      $(`[data-mark="${i}"]`, v)?.style.setProperty("--c", inp.value);
+      set((c) => { c.colors[i] = inp.value.toUpperCase(); });
+    }));
+    $$("[data-current]", v).forEach((b) => b.addEventListener("click", () => set((c) => { c.currentStage = Number(b.dataset.current); }, true)));
+    $$("[data-remove]", v).forEach((b) => b.addEventListener("click", () => set((c) => {
+      const i = Number(b.dataset.remove);
+      c.dpi.push(c.dpi.splice(i, 1)[0]); c.colors.push(c.colors.splice(i, 1)[0]); // mantém 8 entradas
+      c.stageCount--;
+      if (c.currentStage > i) c.currentStage--;
+      c.currentStage = Math.min(c.currentStage, c.stageCount - 1);
+    }, true)));
+    $("#add-stage", v)?.addEventListener("click", () => set((c) => {
+      c.dpi[c.stageCount] = snapDpi(c.dpi[c.stageCount - 1] + 800); c.stageCount++;
+    }, true));
+  },
+  buttons(v) {
+    $$("[data-hs]", v).forEach((b) => b.addEventListener("click", () => { S.btn = Number(b.dataset.hs); render(); }));
+    $$("[data-choice]", v).forEach((b) => b.addEventListener("click", () => set((c) => { c.buttons[S.btn] = b.dataset.choice; }, true)));
+  },
+  advanced(v) {
+    $$("[data-model]", v).forEach((b) => b.addEventListener("click", () => { S.model = Number(b.dataset.model); store.set("model", S.model); render(); }));
+    $("#export", v)?.addEventListener("click", () => run(async () => toast("Backup salvo em " + await bridge.call("exportBackup"))));
+    $("#import", v)?.addEventListener("click", () => run(async () => {
+      const cfg = await bridge.call("importBackup");
+      if (cfg) { S.cfg = cfg; render(); toast("Backup carregado. Aplique no mouse para gravar."); }
+    }));
+  },
+};
+
+// ---------------- ações ----------------
+function go(page) { S.page = page; render(); }
+
+async function run(fn) {
+  if (S.busy) return;
+  S.busy = true; document.body.style.cursor = "progress";
+  try { await fn(); } catch (e) { toast(e.message, true); }
+  finally { S.busy = false; document.body.style.cursor = ""; $("#progress").classList.remove("on"); }
+}
+
+function loadState(st) {
+  S.device = st.device; S.cfg = st.config; S.warnings = st.warnings; S.hex = st.hex;
+  S.cfg.colors = S.cfg.colors.map((x) => x.toUpperCase());
+  S.saved = clone(S.cfg);
+  if (st.device.model != null && store.get("model") == null) S.model = st.device.model; // foto pelo MID do mouse
+  render();
+  if (st.warnings.length) toast(`${st.warnings.length} campo(s) com leitura inválida. Veja em Avançado.`, true);
+}
+
+const connect = (kind) => run(async () => loadState(await bridge.call(kind === "sim" ? "connectSim" : "connectReal")));
+
+async function applyFlow() {
+  const ops = await bridge.call("preview", S.cfg);
+  if (!ops.length) { S.saved = clone(S.cfg); refreshChanges(); return; }
+  $("#sheet-text").textContent = `${ops.length === 1 ? "1 pacote vai" : ops.length + " pacotes vão"} para a memória do mouse. Antes disso, um backup da configuração atual é salvo.`;
+  $("#sheet-packets").textContent = ops.map((o) => `${o.address}  ${o.bytes}`).join("\n");
+  $("#sheet").hidden = false;
+  $("#sheet-confirm").focus();
+}
+
+function toast(text, error = false) {
+  const t = $("#toast");
+  t.textContent = text; t.classList.toggle("error", error); t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3600);
+}
+const logLine = (l) => `<div title="${esc(l.text)}"><time>${l.time}</time>${esc(l.text)}</div>`;
+
+// fotos oficiais são opcionais (não vão no repositório): sem elas, usa a silhueta neutra
+document.addEventListener("error", (e) => {
+  const img = e.target;
+  if (img.tagName === "IMG" && !img.src.endsWith("placeholder.svg")) img.src = "img/placeholder.svg";
+}, true);
+
+// ---------------- eventos globais ----------------
+document.addEventListener("click", (e) => {
+  const nav = e.target.closest("[data-page]"); if (nav && !nav.disabled) return go(nav.dataset.page);
+  const c = e.target.closest("[data-connect]"); if (c) return connect(c.dataset.connect);
+  if (e.target.closest("#reread")) return run(async () => loadState(await bridge.call("read")));
+});
+$("#discard").addEventListener("click", () => { S.cfg = clone(S.saved); render(); });
+$("#apply").addEventListener("click", () => run(applyFlow));
+$("#sheet-cancel").addEventListener("click", () => { $("#sheet").hidden = true; });
+$("#sheet-confirm").addEventListener("click", () => {
+  $("#sheet").hidden = true;
+  run(async () => { const r = await bridge.call("apply", S.cfg); loadState(r.state); toast(`Aplicado no mouse (${r.count} ${r.count === 1 ? "pacote" : "pacotes"})`); });
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#sheet").hidden = true; });
+
+bridge.on("progress", (m) => { $("#progress").classList.add("on"); $("#progress i").style.width = m.value + "%"; });
+bridge.on("log", (m) => {
+  S.logs.push(m); if (S.logs.length > 200) S.logs.splice(0, S.logs.length - 200);
+  const el = $("#log");
+  if (el) { el.insertAdjacentHTML("beforeend", logLine(m)); while (el.childElementCount > 60) el.firstElementChild.remove(); }
+});
+
+// ---------------- início ----------------
+(async () => {
+  fit();
+  const q = new URLSearchParams(location.search);
+  try { S.opt = await bridge.call("init"); } catch { S.opt = null; }
+  if (q.get("page") && PAGES[q.get("page")]) S.page = q.get("page");
+  render();
+  if (q.get("sim") === "1") connect("sim");
+})();
