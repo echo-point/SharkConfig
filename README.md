@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.svg" width="112" alt="Ícone do SharkConfig"></p>
+
 # SharkConfig
 
 Configurador **não oficial** e leve para o mouse **Attack Shark X8 Ultra/Ultimate** no Windows.
@@ -72,12 +74,21 @@ src/SharkConfig/
   MouseDevice.cs   transações, leitura da memória, aplicação com backup
   UI/              janela nativa + WebView2 e ponte JS ↔ C#
   wwwroot/         interface (HTML/CSS/JS)
+  app.ico          ícone do app (16 a 256 px, gerado de assets/icon.svg)
+assets/icon.svg    ícone em vetor
 tools/             sonda de coleções HID e atualização das fotos
 docs/PROTOCOL.md   protocolo documentado
 ```
 
-Consumo medido: cerca de 38 MB de RAM privada e ~0% de CPU parado; ao minimizar, a interface é
-suspensa.
+O mouse é detectado sozinho ao ser conectado (o app reage ao aviso do Windows, sem ficar consultando).
+A engrenagem no canto inferior esquerdo abre a aparência: tema escuro ou claro, transparência da
+janela (fundo acrílico do Windows 11) e a opção de reduzir movimento.
+
+Consumo medido (Windows 11): o processo `SharkConfig.exe` usa cerca de 15 MB de RAM privada; somando
+os processos do WebView2 que desenham a interface (com a GPU ligada, para as animações e o vidro
+ficarem lisos), o total fica entre ~180 MB (sem mouse) e ~225 MB (conectado). CPU parado: ~0%; ao
+minimizar, a interface é suspensa. O app abre uma única janela: executá-lo de novo só traz a janela
+aberta para a frente.
 
 ## Licença
 

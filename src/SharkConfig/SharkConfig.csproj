@@ -10,6 +10,7 @@
     <RootNamespace>SharkConfig</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Version>0.3.0</Version>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- consumo: GC de estação sem thread em segundo plano, sem dados ICU, só recursos pt/en -->
     <ServerGarbageCollector>false</ServerGarbageCollector>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
@@ -22,5 +23,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ícone da janela e da barra de tarefas (o mesmo do .exe) -->
+    <EmbeddedResource Include="app.ico" LogicalName="SharkConfig.app.ico" />
   </ItemGroup>
 </Project>

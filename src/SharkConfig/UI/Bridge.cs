@@ -105,7 +105,76 @@ public sealed class Bridge
     public static bool IsPaw3950Model(int? index) => index is >= 0 and <= 7;
     bool DpiSupported => IsPaw3950Model(_model is { } m ? ModelIndex(m.Mid) : null);
 
-    public Bridge(Action<string> post, Func<Func<string?>, string?> onUi) { _post = post; _onUi = onUi; }
+    readonly AppSettings _settings;
+    readonly Action<AppSettings> _applyAppearance;
+
+    public Bridge(Action<string> post, Func<Func<string?>, string?> onUi, AppSettings settings, Action<AppSettings> applyAppearance)
+    {
+        _post = post; _onUi = onUi; _settings = settings; _applyAppearance = applyAppearance;
+    }
+
+    /// <summary>
+    /// Chamado (com debounce) quando o Windows avisa que um dispositivo entrou ou saiu.
+    /// Conecta sozinho se o X8 apareceu; avisa a interface se o mouse aberto sumiu.
+    /// </summary>
+    public async Task OnDevicesChangedAsync()
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            object? evt;
+            try { evt = await Task.Run<object?>(Check); }
+            catch (Exception ex) { evt = new { @event = "notice", text = ex.Message }; }
+            if (evt is not null) _post(JsonSerializer.Serialize(evt, Json));
+        }
+        finally { _lock.Release(); }
+
+        object? Check()
+        {
+            {
+                if (_dev is not null)
+                {
+                    bool present = _dev.DevicePath is null ||
+                        WinHid.Enumerate(WinHid.AttackSharkVid).Any(d => string.Equals(d.Path, _dev.DevicePath, StringComparison.OrdinalIgnoreCase));
+                    if (present) return null;
+                    Log("Mouse desconectado.");
+                    _dev.Dispose(); _dev = null; _model = null;
+                    return new { @event = "device", state = (object?)null };
+                }
+                var state = TryAutoConnect();
+                return state is null ? null : new { @event = "device", state };
+            }
+        }
+    }
+
+    /// <summary>Tenta abrir o X8 sem incomodar o usuário: sem mouse, retorna null em silêncio.</summary>
+    object? TryAutoConnect()
+    {
+        if (_dev is not null) return Read();
+        if (WinHid.FindMouse(WinHid.Enumerate(WinHid.AttackSharkVid)) is null) return null;
+        try
+        {
+            var dev = MouseDevice.TryOpenReal(out var message);
+            if (dev is null) return null;
+            Log(message);
+            return Connect(dev);
+        }
+        catch (Exception ex)
+        {
+            _dev?.Dispose(); _dev = null;
+            throw new InvalidOperationException("O X8 foi encontrado, mas não respondeu. Feche o app oficial da Attack Shark e reconecte o mouse. (" + ex.Message + ")");
+        }
+    }
+
+    object SetAppearance(JsonNode? args)
+    {
+        var s = args.Deserialize<AppSettings>(Json) ?? new AppSettings();
+        AppSettings.Normalize(s);
+        _settings.Theme = s.Theme; _settings.Transparency = s.Transparency; _settings.ReduceMotion = s.ReduceMotion;
+        _applyAppearance(_settings);   // moldura nativa primeiro (acompanha o crossfade), arquivo depois
+        _settings.Save();
+        return _settings;
+    }
 
     public async Task HandleAsync(string message)
     {
@@ -125,6 +194,8 @@ public sealed class Bridge
     {
         "init" => Init(),
         "connectReal" => ConnectReal(),
+        "autoConnect" => TryAutoConnect(),
+        "setAppearance" => SetAppearance(args),
         "read" => Read(),
         "preview" => Preview(Dto(args)),
         "apply" => Apply(Dto(args)),
@@ -151,6 +222,7 @@ public sealed class Bridge
             brightnessLevels = MouseConfig.BrightnessLevels.Length,
         },
         version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
+        appearance = _settings,
     };
 
     object? ConnectReal()

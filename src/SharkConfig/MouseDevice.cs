@@ -13,6 +13,8 @@ public sealed class MouseDevice : IDisposable
     public event Action<string>? Log;
     public FlashImage? Image { get; private set; }
     public string Description => _t.Description;
+    /// <summary>Caminho HID da coleção aberta (para saber se o mouse foi desconectado).</summary>
+    public string? DevicePath { get; private init; }
 
     public MouseDevice(IHidTransport t) => _t = t;
 
@@ -28,7 +30,7 @@ public sealed class MouseDevice : IDisposable
             return null;
         }
         message = $"OUT: {pick.Value.Out}\nIN:  {pick.Value.In}";
-        return new MouseDevice(new WinHidTransport(pick.Value.Out, pick.Value.In));
+        return new MouseDevice(new WinHidTransport(pick.Value.Out, pick.Value.In)) { DevicePath = pick.Value.Out.Path };
     }
 
     // O thread oficial espera ≥ 8 ms entre pacotes (@0x180014bc7); usamos 10 ms.

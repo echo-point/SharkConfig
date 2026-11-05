@@ -72,11 +72,22 @@ const ICON = {
 const PAGES = {
   overview: { title: "Visão geral", sub: () => S.device ? connectionText() : "Nenhum mouse conectado" },
   performance: { title: "Desempenho", sub: () => "Taxa de atualização, sensor e energia" },
-  dpi: { title: "Sensibilidade", sub: () => "Até 8 estágios, de 50 a 42.000 DPI" },
+  dpi: { title: "Sensibilidade", sub: () => `Até ${S.opt?.dpi.maxStages ?? 6} estágios, de 50 a 42.000 DPI` },
   buttons: { title: "Botões", sub: () => "Clique em um botão no mouse para trocar a função" },
   lighting: { title: "Iluminação", sub: () => "Indicador de DPI" },
   advanced: { title: "Avançado", sub: () => "Memória do mouse, aparência e registro" },
 };
+
+// engrenagem desenhada por código: 8 dentes arredondados em volta de um anel
+const GEAR = (() => {
+  const pts = [], teeth = 8, ro = 9.2, ri = 7.1;
+  for (let i = 0; i < teeth * 4; i++) {
+    const a = (i / (teeth * 4)) * Math.PI * 2 - Math.PI / 2, r = (i % 4 < 2) ? ro : ri;
+    pts.push(`${(12 + r * Math.cos(a)).toFixed(2)} ${(12 + r * Math.sin(a)).toFixed(2)}`);
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M${pts.join("L")}Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+})();
+const gearButton = () => `<button class="gear" data-settings aria-label="Aparência" title="Aparência">${GEAR}</button>`;
 
 const stageColor = () => S.cfg ? S.cfg.colors[S.cfg.currentStage] : "#0A84FF";
 const hz = (code) => S.opt?.pollingRates.find((p) => p.code === code)?.hz ?? 0;
@@ -97,7 +108,9 @@ function changeCount() {
 }
 function refreshChanges() {
   const n = changeCount();
-  $("#changes").classList.toggle("show", n > 0);
+  const pill = $("#changes");
+  pill.classList.toggle("show", n > 0);
+  pill.inert = n === 0;   // escondida fora da tela: não pode receber foco (Tab não a alcança)
   $("#changes-text").textContent = n === 1 ? "1 alteração não aplicada" : `${n} alterações não aplicadas`;
   document.documentElement.style.setProperty("--stage", stageColor());
 }
@@ -130,19 +143,25 @@ function updateLeds() {
 }
 
 // ---------------- shell ----------------
+// só troca o HTML quando ele muda: a barra lateral é igual em quase todo render (sem refazer DOM, imagem e foco)
+const setHTML = (el, html) => { if (el._html !== html) { el.innerHTML = html; el._html = html; } };
 function renderRail() {
   const d = S.device, bat = d?.battery;
-  $("#device").innerHTML = `
+  setHTML($("#device"), `
     <img src="${photoSrc()}" alt="">
     <div><div class="device-name">X8 Ultra</div>
       <div class="device-status"><i class="dot ${d ? "on" : ""}"></i>${d ? (viaDongle() ? "Receptor 8K" : "Cabo USB") : "Desconectado"}</div></div>
-    ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`;
-  $("#nav").innerHTML = Object.entries(PAGES).map(([key, p]) => `
-    <button data-page="${key}" ${S.page === key ? 'aria-current="page"' : ""} ${!S.cfg && key !== "overview" && key !== "advanced" ? "disabled" : ""}>
-      <svg viewBox="0 0 24 24"><path d="${ICON[key]}"/></svg>${p.title}</button>`).join("");
-  $("#rail-foot").innerHTML = d
-    ? `<button class="btn block" id="reread">Ler o mouse de novo</button><small>${d.firmware ? `Firmware ${d.firmware}` : ""}</small>`
-    : `<button class="btn accent block" data-connect>Procurar mouse</button><small>SharkConfig ${S.opt?.version ?? ""} — não oficial</small>`;
+    ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`);
+  // navegação: estrutura fixa; só o estado muda (o botão focado continua o mesmo elemento)
+  setHTML($("#nav"), Object.entries(PAGES).map(([key, p]) => `
+    <button data-page="${key}"><svg viewBox="0 0 24 24"><path d="${ICON[key]}"/></svg>${p.title}</button>`).join(""));
+  $$("#nav [data-page]").forEach((b) => {
+    const key = b.dataset.page;
+    if (S.page === key) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    b.disabled = !S.cfg && key !== "overview" && key !== "advanced";
+  });
+  setHTML($("#rail-foot"), `${d ? '<button class="btn block" id="reread">Ler o mouse de novo</button>' : ""}
+    <div class="foot-row"><small>${d?.firmware ? `Firmware ${d.firmware}` : `SharkConfig ${S.opt?.version ?? ""}`}</small>${gearButton()}</div>`);
 }
 
 function render() {
@@ -193,12 +212,10 @@ const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${v} de 10`, le
 // ---------------- páginas ----------------
 const VIEWS = {
   overview() {
+    // sem mouse: só o título; a conexão é automática assim que o Windows avisar que ele chegou
     if (!S.cfg) return `<div class="connect">
-      <div class="empty"><h2>Conecte o seu X8 Ultra</h2>
-        <p>Use o receptor 8K ou o cabo USB-C e feche o app oficial da Attack Shark.</p>
-        <button class="btn accent" data-connect>Procurar mouse</button>
-      </div>
-      <div class="stage">${photo()}</div></div>`;
+      <div class="empty"><h2>Conecte o seu X8</h2></div>
+      <div class="stage">${photo()}</div>${gearButton()}</div>`;
     // Visão geral é só informativa: nada aqui altera a configuração.
     const c = S.cfg, d = S.device;
     return `<div class="overview">
@@ -296,7 +313,7 @@ const VIEWS = {
   advanced() {
     const warn = S.warnings.length ? `<p class="note warn">${S.warnings.map(esc).join("<br>")}</p>` : "";
     const models = Array.from({ length: 18 }, (_, i) =>
-      `<button class="model" data-model="${i}" aria-pressed="${i === S.model}" aria-label="Foto ${i + 1}"><img src="img/mouse${i}.png" alt="" loading="lazy"></button>`).join("");
+      `<button class="model" data-model="${i}" aria-pressed="${i === S.model}" aria-label="Foto ${i + 1}"><img src="img/mouse${i}.png" alt="" loading="lazy" decoding="async"></button>`).join("");
     return `<div class="adv">
       <div class="inspector"><h2>Memória do mouse</h2><p class="sub">A configuração fica gravada no próprio mouse. Os backups vão para a pasta do app.</p>
         <div class="acts-row"><button class="btn" id="export" ${S.cfg ? "" : "disabled"}>Exportar backup</button><button class="btn" id="import" ${S.cfg ? "" : "disabled"}>Carregar backup</button></div>
@@ -357,8 +374,22 @@ const BIND = {
   },
 };
 
+// ---------------- transições (View Transitions: o mouse desliza entre as telas) ----------------
+// plain: crossfade único da tela, sem elementos nomeados. Usado quando o mouse só existe numa das
+// telas (Avançado não tem foto): animado sozinho, ele surgia/sumia como silhueta cinza por cima da outra.
+function transition(update, plain = false) {
+  if (!document.startViewTransition || appearance.reduceMotion) return update();
+  const root = document.documentElement;
+  if (plain) root.classList.add("vt-plain");
+  document.startViewTransition(update).finished.finally(() => root.classList.remove("vt-plain"));
+}
+
 // ---------------- ações ----------------
-function go(page) { S.page = page; render(); }
+const hasPhoto = (page) => page !== "advanced";
+function go(page) {
+  if (page === S.page) return;
+  transition(() => { S.page = page; render(); }, !(hasPhoto(S.page) && hasPhoto(page)));
+}
 
 async function run(fn) {
   if (S.busy) return;
@@ -368,23 +399,105 @@ async function run(fn) {
 }
 
 function loadState(st) {
-  S.device = st.device; S.cfg = st.config; S.warnings = st.warnings; S.hex = st.hex;
-  S.cfg.colors = S.cfg.colors.map((x) => x.toUpperCase());
-  S.saved = clone(S.cfg);
-  if (st.device.model != null && store.get("model") == null) S.model = st.device.model; // foto pelo MID do mouse
-  render();
+  $("#progress").classList.remove("on");   // leitura terminou (também na conexão automática)
+  const arriving = !S.cfg;
+  const apply = () => {
+    S.device = st.device; S.cfg = st.config; S.warnings = st.warnings; S.hex = st.hex;
+    S.cfg.colors = S.cfg.colors.map((x) => x.toUpperCase());
+    S.saved = clone(S.cfg);
+    if (st.device.model != null && store.get("model") == null) S.model = st.device.model; // foto pelo MID do mouse
+    if (arriving) S.page = "overview";
+    render();
+  };
+  arriving ? transition(apply) : apply();   // ao conectar: o mouse desliza e a barra lateral entra
   if (st.warnings.length) toast(`${st.warnings.length} campo(s) com leitura inválida. Veja em Avançado.`, true);
 }
 
-const connect = () => run(async () => loadState(await bridge.call("connectReal")));
+function deviceGone() {
+  closeModal("#sheet");
+  transition(() => { S.device = S.cfg = S.saved = null; S.warnings = []; S.hex = ""; S.page = "overview"; render(); });
+}
+
+// ---------------- folhas modais com animação (abrir: mola; fechar: rápido) ----------------
+// Com uma folha aberta, o resto da janela fica inerte: Tab circula só dentro da folha.
+// A folha que está fechando também fica inerte (ainda visível, mas já não é interativa).
+let modalReturnFocus = null;
+function syncInert() {
+  const open = $$(".modal").some((m) => !m.hidden && !m.classList.contains("closing"));
+  $("#app").inert = open;
+  return open;
+}
+function openModal(sel, focusSel) {
+  const m = $(sel);
+  if (!syncInert()) modalReturnFocus = document.activeElement;
+  m.classList.remove("closing");
+  m.hidden = false; m.inert = false;
+  syncInert();
+  $(focusSel ?? "button", m)?.focus({ preventScroll: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => m.classList.add("open")));
+}
+function closeModal(sel) {
+  const m = $(sel);
+  if (m.hidden || m.classList.contains("closing")) return;
+  m.classList.add("closing"); m.classList.remove("open");
+  m.inert = true;
+  if (!syncInert() && modalReturnFocus?.isConnected) modalReturnFocus.focus({ preventScroll: true });
+  setTimeout(() => { if (m.classList.contains("closing")) { m.hidden = true; m.classList.remove("closing"); } }, 230);
+}
+
+// ---------------- aparência: tema e transparência ----------------
+let appearance = { theme: "dark", transparency: 0, reduceMotion: false };
+// onPaint: troca a moldura nativa. Sem animação, junto com as cores; com crossfade, no meio dele
+// (a barra de título do Windows não faz fade — trocar no 1º quadro deixava barra clara sobre conteúdo escuro).
+function applyAppearance(a, animate = false, onPaint = null) {
+  const root = document.documentElement;
+  root.dataset.motion = a.reduceMotion ? "reduce" : "full";
+  $("#reduce-motion").checked = !!a.reduceMotion;
+  const paint = () => {
+    root.dataset.theme = a.theme;
+    root.style.setProperty("--opacity", String(1 - a.transparency / 100));
+    $$("[data-theme-choice]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === a.theme)));
+  };
+  if (animate && a.theme !== root.dataset.theme) switchTheme(paint, onPaint);
+  else { paint(); onPaint?.(); }
+  const r = $("#transparency");
+  r.value = a.transparency; r.style.setProperty("--p", pct(a.transparency, 0, 60));
+  $("#transparency-out").textContent = `${a.transparency}%`;
+}
+// Troca de tema como no macOS: o quadro inteiro faz um único crossfade. A classe theme-switch tira as
+// transições de cor e os nomes de View Transition enquanto dura (ver styles.css).
+const THEME_FADE_MS = 300;   // igual a ::view-transition-*(root) com .theme-switch em styles.css
+function switchTheme(paint, onMid) {
+  const root = document.documentElement;
+  root.classList.add("theme-switch");
+  const done = () => root.classList.remove("theme-switch");
+  if (!document.startViewTransition || appearance.reduceMotion) {
+    paint(); onMid?.(); void document.body.offsetWidth; done();   // troca seca, tudo no mesmo quadro
+    return;
+  }
+  const vt = document.startViewTransition(paint);
+  // ready = o crossfade começou; a moldura troca com o conteúdo a ~50% (descontado ~1 quadro de atraso do DWM)
+  vt.ready.then(() => setTimeout(() => onMid?.(), THEME_FADE_MS / 2 - 16), () => onMid?.());
+  vt.finished.finally(done);
+}
+let saveTimer;
+function changeAppearance(patch) {
+  appearance = { ...appearance, ...patch };
+  const send = () => bridge.call("setAppearance", appearance).catch(() => {});
+  clearTimeout(saveTimer);
+  if ("theme" in patch) applyAppearance(appearance, true, send);   // moldura troca junto com a página
+  else {
+    applyAppearance(appearance);
+    saveTimer = setTimeout(send, 120);   // slider: só quando para, para não martelar o DWM e o disco
+  }
+}
 
 async function applyFlow() {
   const ops = await bridge.call("preview", S.cfg);
   if (!ops.length) { S.saved = clone(S.cfg); refreshChanges(); return; }
   $("#sheet-text").textContent = `${ops.length === 1 ? "1 pacote vai" : ops.length + " pacotes vão"} para a memória do mouse. Antes disso, um backup da configuração atual é salvo.`;
   $("#sheet-packets").textContent = ops.map((o) => `${o.address}  ${o.bytes}`).join("\n");
-  $("#sheet").hidden = false;
-  $("#sheet-confirm").focus();
+  openModal("#sheet", "#sheet-confirm");
 }
 
 function toast(text, error = false) {
@@ -403,19 +516,28 @@ document.addEventListener("error", (e) => {
 // ---------------- eventos globais ----------------
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-page]"); if (nav && !nav.disabled) return go(nav.dataset.page);
-  if (e.target.closest("[data-connect]")) return connect();
+  if (e.target.closest("[data-settings]")) return openModal("#settings", '[data-theme-choice][aria-pressed="true"]');
   if (e.target.closest("#reread")) return run(async () => loadState(await bridge.call("read")));
 });
 $("#discard").addEventListener("click", () => { S.cfg = clone(S.saved); render(); });
 $("#apply").addEventListener("click", () => run(applyFlow));
-$("#sheet-cancel").addEventListener("click", () => { $("#sheet").hidden = true; });
+$("#sheet-cancel").addEventListener("click", () => closeModal("#sheet"));
 $("#sheet-confirm").addEventListener("click", () => {
-  $("#sheet").hidden = true;
+  closeModal("#sheet");
   run(async () => { const r = await bridge.call("apply", S.cfg); loadState(r.state); toast(`Aplicado no mouse (${r.count} ${r.count === 1 ? "pacote" : "pacotes"})`); });
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#sheet").hidden = true; });
+// aparência
+$("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme-choice]"); if (b) changeAppearance({ theme: b.dataset.themeChoice }); });
+$("#transparency").addEventListener("input", (e) => changeAppearance({ transparency: Number(e.target.value) }));
+$("#reduce-motion").addEventListener("change", (e) => changeAppearance({ reduceMotion: e.target.checked }));
+$("#settings-done").addEventListener("click", () => closeModal("#settings"));
+// clicar fora do painel fecha
+$$(".modal").forEach((m) => m.addEventListener("pointerdown", (e) => { if (e.target === m) closeModal("#" + m.id); }));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeModal("#sheet"); closeModal("#settings"); } });
 
-bridge.on("progress", (m) => { $("#progress").classList.add("on"); $("#progress i").style.width = m.value + "%"; });
+bridge.on("progress", (m) => { $("#progress").classList.add("on"); $("#progress i").style.setProperty("--p", m.value / 100); });
+bridge.on("device", (m) => m.state ? loadState(m.state) : deviceGone());
+bridge.on("notice", (m) => toast(m.text, true));
 bridge.on("log", (m) => {
   S.logs.push(m); if (S.logs.length > 200) S.logs.splice(0, S.logs.length - 200);
   const el = $("#log");
@@ -427,6 +549,11 @@ bridge.on("log", (m) => {
   fit();
   const q = new URLSearchParams(location.search);
   try { S.opt = await bridge.call("init"); } catch { S.opt = null; }
+  if (S.opt?.appearance) { appearance = S.opt.appearance; }
+  applyAppearance(appearance);
   if (q.get("page") && PAGES[q.get("page")]) S.page = q.get("page");
   render();
+  // conexão automática: tenta agora; depois o C# avisa sozinho quando o mouse for ligado/desligado
+  try { const st = await bridge.call("autoConnect"); if (st) loadState(st); }
+  catch (e) { toast(e.message, true); }
 })();
