@@ -1,17 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- SharkConfig — ícone "Geométrico": barbatana em três facetas sobre squircle grafite -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Ícone do SharkConfig: barbatana na linha d'água (proposta 1). Squircle de 824 px na grade de 1024. -->
   <defs>
     <linearGradient id="graphite" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3A3E44"/><stop offset="1" stop-color="#16181B"/>
     </linearGradient>
+    <linearGradient id="ember" x1="0" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#FFD60A"/><stop offset=".5" stop-color="#FF9F0A"/><stop offset="1" stop-color="#FF453A"/>
+    </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
-    <path id="sq" d="M100 285 C100 140 140 100 285 100 H739 C884 100 924 140 924 285 V739 C924 884 884 924 739 924 H285 C140 924 100 884 100 739 Z"/>
   </defs>
-  <use href="#sq" fill="url(#graphite)"/>
-  <path d="M300 744 L520 470 L560 744 Z" fill="#FF453A"/>
-  <path d="M520 470 L700 264 L560 744 Z" fill="#FFD60A"/>
-  <path d="M560 744 L700 264 L726 744 Z" fill="#FF9F0A"/>
-  <use href="#sq" fill="url(#sheen)"/>
+  <path d="M100 285 C100 140 140 100 285 100 H739 C884 100 924 140 924 285 V739 C924 884 884 924 739 924 H285 C140 924 100 884 100 739 Z" fill="url(#graphite)"/>
+  <path d="M292 742 C352 610 462 412 694 262 C648 410 646 572 724 742 Z" fill="url(#ember)"/>
+  <path d="M220 742 H804" stroke="#FF9F0A" stroke-opacity=".5" stroke-width="18" stroke-linecap="round"/>
+  <path d="M100 285 C100 140 140 100 285 100 H739 C884 100 924 140 924 285 V739 C924 884 884 924 739 924 H285 C140 924 100 884 100 739 Z" fill="url(#sheen)"/>
 </svg>
