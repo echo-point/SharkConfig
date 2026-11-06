@@ -90,6 +90,17 @@ public sealed class MouseConfig
 
     public static int DecodeDpi(ushort raw, byte flag) => (raw + 1) * ((flag & 0x01) != 0 ? 2 : 1);
 
+    /// <summary>
+    /// Registro legado em 0x0C + 4i: [X baixo, Y baixo, flag] em unidades de 50 DPI, com os bits altos
+    /// no flag (bits 2–3) e o divisor 2 no bit 0, como no formato novo. Firmwares que deixam a tabela
+    /// 0x1B00 apagada (toda 0xFF) guardam o DPI só aqui [H: 800, 2400, 3200, 5600, 8000, 42000].
+    /// </summary>
+    public static int DecodeLegacyDpi(byte lo, byte flag) =>
+        ((lo | ((flag >> 2) & 0x03) << 8) + 1) * 50 * ((flag & 0x01) != 0 ? 2 : 1);
+
+    /// <summary>true quando o DPI veio do registro legado (a tabela 0x1B00 está apagada).</summary>
+    public bool DpiFromLegacy;
+
     public static int SnapDpi(int dpi)
     {
         dpi = Math.Clamp(dpi, DpiMin, DpiMax);
@@ -127,6 +138,11 @@ public sealed class MouseConfig
         {
             var d = img.GetRecord(Flash.Dpi(i), 5);
             if (d is not null) c.Dpi[i] = DecodeDpi((ushort)(d[0] | d[1] << 8), d[4]);
+            else if (IsErased(img, Flash.Dpi(i), 6) && img.GetRecord(Flash.DpiLegacy(i), 3) is { } l)
+            {
+                c.Dpi[i] = DecodeLegacyDpi(l[0], l[2]);
+                c.DpiFromLegacy = true;
+            }
             else if (i < c.StageCount) c.Warnings.Add($"DPI {i + 1} inválido");
             var col = img.GetRecord(Flash.DpiColor(i), 3);
             if (col is not null) c.DpiColors[i] = Color.FromArgb(col[0], col[1], col[2]);
@@ -139,6 +155,8 @@ public sealed class MouseConfig
         }
         return c;
     }
+
+    static bool IsErased(FlashImage img, int addr, int len) => img.Data.AsSpan(addr, len).IndexOfAnyExcept((byte)0xFF) < 0;
 
     // ---------------- aplicar ----------------
     public FlashImage ApplyTo(FlashImage baseImg)
@@ -164,9 +182,13 @@ public sealed class MouseConfig
         var old = FromImage(baseImg);
         for (int i = 0; i < Flash.MaxStages; i++)
         {
-            // Só reescreve DPI se o valor mudou (preserva bytes originais do firmware).
-            if (old.Dpi[i] != Dpi[i] || baseImg.GetRecord(Flash.Dpi(i), 5) is null)
+            // Só reescreve DPI se o valor mudou (preserva bytes originais do firmware). Antes, um
+            // registro inválido também era reescrito — com a tabela 0x1B00 apagada isso gravava os 8
+            // registros em toda aplicação, mesmo sem mudar o DPI.
+            if (old.Dpi[i] != Dpi[i])
             {
+                if (old.DpiFromLegacy)
+                    throw new InvalidOperationException("Este mouse guarda o DPI no formato antigo (0x0C); por segurança o DPI fica só para leitura.");
                 var (raw, flag) = EncodeDpi(Dpi[i]);
                 img.SetRecord(Flash.Dpi(i), [(byte)raw, (byte)(raw >> 8), (byte)raw, (byte)(raw >> 8), flag]);
             }

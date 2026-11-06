@@ -2,9 +2,9 @@
 
 # SharkConfig
 
-Configurador **não oficial** e leve para o mouse **Attack Shark X8 Ultra/Ultimate** no Windows.
-Interface inspirada no macOS e no Logitech G HUB, protocolo reconstruído por engenharia reversa
-(interoperabilidade) do software oficial.
+Configurador **não oficial** e leve para o mouse **Attack Shark X8 Ultra/Ultimate** e o teclado
+**Attack Shark X68 HE** no Windows. Interface inspirada no macOS e no Logitech G HUB, protocolos
+reconstruídos por engenharia reversa (interoperabilidade) dos softwares oficiais.
 
 > Projeto independente, sem vínculo com a Attack Shark. Use por sua conta e risco.
 
@@ -18,14 +18,29 @@ Interface inspirada no macOS e no Logitech G HUB, protocolo reconstruído por en
 | Iluminação | efeito, brilho e velocidade do indicador de DPI |
 | Avançado | leitura da memória do mouse, backup e restauração |
 
-As configurações ficam gravadas **na memória do próprio mouse**: aplique e feche o app. Ele não roda
+### Teclado X68 HE (pelo cabo)
+
+| Área | Ajustes |
+|---|---|
+| Desempenho | taxa de atualização 125–8000 Hz |
+| Teclas | ponto de acionamento, ponto de soltura, Rapid Trigger (liga/desliga e sensibilidade ao pressionar e soltar) e zona morta, por tecla ou em grupo (todas, WASD, letras) |
+| Iluminação | 19 efeitos, direção, velocidade, brilho, cor ou arco-íris |
+| Avançado | leitura das tabelas do teclado, backup e restauração |
+
+Reconhece as três revisões do X68 HE pelo id que o teclado informa (2270, 2472 e 2902). Teclas com
+DKS, Mod-Tap, Toggle ou SnapTap configurados no app oficial aparecem apagadas e não são alteradas.
+A tela inicial mostra o mouse e o teclado, com o que está conectado em cada um, e você escolhe qual
+configurar; o botão Início na barra lateral volta para ela.
+
+As configurações ficam gravadas **na memória do próprio dispositivo**: aplique e feche o app. Ele não roda
 em segundo plano nem inicia com o Windows.
 
 ## Requisitos
 
 - Windows 10/11 com o [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (já vem no Windows 11)
 - [.NET SDK 10](https://dotnet.microsoft.com/download) para compilar
-- Mouse X8 Ultra pelo receptor 8K ou pelo cabo (VID `0x3554`). Feche o app oficial antes de usar.
+- Mouse X8 Ultra pelo receptor 8K ou pelo cabo (VID `0x3554`), ou teclado X68 HE pelo cabo
+  (VID `0x3151`, PID `0x502D`). Feche o app oficial antes de usar.
 
 ## Compilar e rodar
 
@@ -39,6 +54,17 @@ dotnet build -c Release
 |---|---|
 | `--page dpi` | abre numa página: `overview`, `performance`, `dpi`, `buttons`, `lighting`, `advanced` |
 | `--list` | lista as coleções HID do PC |
+| `--mouse-probe` | só leitura: abre o X8, lê a memória e lista os avisos (`--verbose` mostra os pacotes) |
+| `--kb-probe` | só leitura: identifica o teclado e despeja as tabelas (`--verbose` mostra os pacotes) |
+| `--kb-probe --dry-run` | lê o teclado e mostra os pacotes de uma edição de exemplo, sem enviar nenhum |
+| `--kb-probe --write-test rate\|led\|key` | grava uma alteração de teste, confere e restaura o original (com backup) |
+
+### Foto do teclado
+
+`src/SharkConfig/wwwroot/img/keyboard-x68.png` é a foto de produto do X68 HE (© Attack Shark), recortada
+para 498×182 sem a alça, e serve de corpo do teclado. As teclas do app são desenhadas por cima, nas
+posições medidas na foto: a grade de 65% fica em `KeyboardModels.cs`. Se a foto faltar, o app desenha
+um gabinete simples no lugar.
 
 ### Fotos do mouse
 
@@ -64,23 +90,31 @@ uma instalação do app oficial:
   clique esquerdo.
 - O protocolo veio de análise estática do software oficial; alguns detalhes ainda precisam de
   confirmação em hardware — veja [docs/PROTOCOL.md](docs/PROTOCOL.md).
+- Teclado: só leituras, taxa de atualização (`0x03`), iluminação (`0x07`) e seis tabelas dos switches
+  magnéticos (`0x65`) podem ser enviados; reset de fábrica, calibração, gravação de SKU, apagar a flash
+  e atualização de firmware são bloqueados no código (`KbPacket.AllowedCommands`). Mesmo esquema de
+  backup, recusa de leitura inválida e conferência após gravar — veja
+  [docs/PROTOCOL-KEYBOARD.md](docs/PROTOCOL-KEYBOARD.md).
 
 ## Estrutura
 
 ```
 src/SharkConfig/
   Protocol/        pacotes, checksum, mapa da memória, modelo de configuração
-  Transport/       HID do Windows (SetupAPI/hid.dll)
+  Protocol/Keyboard/  pacotes, modelos (matrizes e layout) e configuração do X68 HE
+  Transport/       HID do Windows (SetupAPI/hid.dll), relatórios de saída e feature reports
   MouseDevice.cs   transações, leitura da memória, aplicação com backup
+  KeyboardDevice.cs  o mesmo para o teclado
   UI/              janela nativa + WebView2 e ponte JS ↔ C#
   wwwroot/         interface (HTML/CSS/JS)
   app.ico          ícone do app (16 a 256 px, gerado de assets/icon.svg)
 assets/icon.svg    ícone em vetor
 tools/             sonda de coleções HID e atualização das fotos
-docs/PROTOCOL.md   protocolo documentado
+docs/PROTOCOL.md   protocolo do mouse documentado
+docs/PROTOCOL-KEYBOARD.md  protocolo do teclado documentado
 ```
 
-O mouse é detectado sozinho ao ser conectado (o app reage ao aviso do Windows, sem ficar consultando).
+Os dispositivos são detectados sozinhos ao serem conectados (o app reage ao aviso do Windows, sem ficar consultando).
 A engrenagem no canto inferior esquerdo abre a aparência: tema escuro ou claro, transparência da
 janela (fundo acrílico do Windows 11) e a opção de reduzir movimento.
 

@@ -9,7 +9,7 @@
     <AssemblyName>SharkConfig</AssemblyName>
     <RootNamespace>SharkConfig</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- consumo: GC de estação sem thread em segundo plano, sem dados ICU, só recursos pt/en -->
     <ServerGarbageCollector>false</ServerGarbageCollector>

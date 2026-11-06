@@ -88,7 +88,23 @@ public static class WinHid
         return (o, i);
     }
 
+    /// <summary>VID dos teclados HE da Attack Shark (plataforma RY5088, app "Attack Shark Driver v4").</summary>
+    public const ushort KeyboardVid = 0x3151;
+    /// <summary>PIDs pelo cabo com a interface de configuração FFFF:02 (lista do app oficial).</summary>
+    public static readonly ushort[] KeyboardPids = [0x502D, 0x502F, 0x5029, 0x5030];
+
+    /// <summary>
+    /// Interface de configuração do teclado: usage page 0xFFFF, usage 0x02, feature report de 65 bytes
+    /// (Report ID 0 + 64). No X68 HE é a "mi_02".
+    /// </summary>
+    public static HidInfo? FindKeyboard(IEnumerable<HidInfo> all) =>
+        all.Where(d => d.Vid == KeyboardVid && KeyboardPids.Contains(d.Pid) && d.UsagePage == 0xFFFF && d.Usage == 0x02 && d.FeatureLen == 65)
+           .OrderByDescending(d => d.Path.Contains("mi_02", StringComparison.OrdinalIgnoreCase))
+           .FirstOrDefault();
+
     // ---------------- P/Invoke ----------------
+    [DllImport("hid.dll", SetLastError = true)] internal static extern bool HidD_SetFeature(SafeFileHandle h, byte[] buf, int len);
+    [DllImport("hid.dll", SetLastError = true)] internal static extern bool HidD_GetFeature(SafeFileHandle h, byte[] buf, int len);
     [StructLayout(LayoutKind.Sequential)]
     struct SP_DEVICE_INTERFACE_DATA { public int cbSize; public Guid InterfaceClassGuid; public int Flags; public IntPtr Reserved; }
     [StructLayout(LayoutKind.Sequential)]
