@@ -225,6 +225,53 @@ public sealed partial class Bridge
 
     sealed class MouseAsleepException : Exception;
 
+    /// <summary>Bateria para a bandeja: nome do mouse, %, se está dormindo e se está ligado.</summary>
+    public sealed record BatteryStatus(bool Present, bool Asleep, int? Percent, bool Wireless);
+    BatteryStatus? _lastTray;
+
+    /// <summary>
+    /// Lê a bateria do X8 para a bandeja (a cada minuto). Usa o mouse aberto na interface, se houver; senão
+    /// abre e fecha o dispositivo só para essa leitura. Pelo receptor confere antes se o mouse está acordado
+    /// (0x03), para não ficar mandando pedidos a um mouse dormindo. Atualiza a barra lateral se a
+    /// porcentagem mudou com o mouse aberto.
+    /// </summary>
+    public async Task<BatteryStatus> PollBatteryAsync()
+    {
+        await _lock.WaitAsync();
+        try { return await Task.Run(Poll); }
+        catch { return _lastTray ?? new BatteryStatus(false, false, null, false); }
+        finally { _lock.Release(); }
+
+        BatteryStatus Poll()
+        {
+            var pick = WinHid.FindMouse(WinHid.Enumerate(WinHid.AttackSharkVid));
+            if (pick is null) return _lastTray = new BatteryStatus(false, false, null, false);
+            bool wireless = WinHid.IsWirelessPid(pick.Value.Out.Pid);
+            MouseDevice? temp = null;
+            var dev = _dev;
+            try
+            {
+                if (dev is null) { dev = temp = MouseDevice.TryOpenReal(out _); if (dev is null) return _lastTray = new BatteryStatus(false, false, null, false); }
+                if (wireless && dev.ReadOnline() == false)
+                    return _lastTray = new BatteryStatus(true, true, _lastTray?.Percent, true);
+                var b = dev.ReadBattery();
+                if (b is not null && _dev is not null && _battery?.Percent != b.Percent)
+                {
+                    _battery = b;
+                    _post(JsonSerializer.Serialize(new { @event = "battery", battery = new { percent = b.Percent, millivolts = b.Millivolts } }, Json));
+                }
+                return _lastTray = new BatteryStatus(true, false, b?.Percent ?? _lastTray?.Percent, wireless);
+            }
+            finally { temp?.Dispose(); }
+        }
+    }
+
+    object SetStartup(JsonNode? args)
+    {
+        Startup.Set(args?.GetValue<bool>() ?? false);
+        return Startup.IsEnabled;
+    }
+
     object SetAppearance(JsonNode? args)
     {
         var s = args.Deserialize<AppSettings>(Json) ?? new AppSettings();
@@ -256,6 +303,7 @@ public sealed partial class Bridge
         "autoConnect" => TryAutoConnect(),
         "available" => Available(),
         "disconnect" => Disconnect(),
+        "setStartup" => SetStartup(args),
         "switchTo" => SwitchTo(args?.GetValue<string>() ?? "mouse"),
         "setAppearance" => SetAppearance(args),
         "read" => _kb is not null ? KbRead() : Read(),
@@ -287,6 +335,7 @@ public sealed partial class Bridge
         },
         version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
         appearance = _settings,
+        startup = Startup.IsEnabled,
         keyboard = KbInit(),
     };
 

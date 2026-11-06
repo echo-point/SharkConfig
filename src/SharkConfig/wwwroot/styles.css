@@ -104,7 +104,15 @@ button, input, select { font: inherit; color: inherit; }
   background: var(--fill-1);
   box-shadow: inset 0 0 0 .5px var(--hair);
 }
-.device { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; padding: 2px 6px 12px; border-bottom: .5px solid var(--line); }
+.device { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 2px 6px 12px; border-bottom: .5px solid var(--line); }
+/* bateria do iPhone: cápsula com o nível preenchido, o número "vazado" em cima e o polo à direita */
+.ios-battery { position: relative; display: grid; place-items: center; width: 31px; height: 15px; margin-right: 3px; border-radius: 4.5px;
+  background: linear-gradient(90deg, var(--batt-fill) var(--lvl), var(--batt-empty) var(--lvl)); }
+.ios-battery span { position: relative; font: 700 10.5px/1 var(--font-display); letter-spacing: -.02em; color: var(--batt-text); font-variant-numeric: tabular-nums; }
+.ios-battery i { position: absolute; right: -3px; top: 50%; width: 2px; height: 5px; margin-top: -2.5px; border-radius: 0 1.5px 1.5px 0; background: var(--batt-empty); }
+.ios-battery.low { --batt-fill: #FF453A; --batt-text: #fff; }
+:root { --batt-fill: #F2F2F0; --batt-empty: rgba(255,255,255,.38); --batt-text: #1C1C1E; }
+:root[data-theme="light"] { --batt-fill: #1D1D1F; --batt-empty: rgba(0,0,0,.28); --batt-text: #fff; }
 .device img { width: 34px; height: 40px; object-fit: contain; }
 .device-name { font-weight: 600; font-size: 14px; letter-spacing: -.005em; }
 .device-status { display: flex; align-items: center; gap: 6px; color: var(--pencil); font-size: 12px; }

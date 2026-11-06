@@ -32,8 +32,18 @@ DKS, Mod-Tap, Toggle ou SnapTap configurados no app oficial aparecem apagadas e 
 A tela inicial mostra o mouse e o teclado, com o que está conectado em cada um, e você escolhe qual
 configurar; o botão Início na barra lateral volta para ela.
 
-As configurações ficam gravadas **na memória do próprio dispositivo**: aplique e feche o app. Ele não roda
-em segundo plano nem inicia com o Windows.
+As configurações ficam gravadas **na memória do próprio dispositivo**: não é preciso deixar o app aberto.
+
+### Bandeja e bateria
+
+Fechar a janela deixa o SharkConfig na bandeja do Windows. O ícone mostra a porcentagem da bateria do
+X8, em vermelho com 20% ou menos, e a dica diz se o mouse está dormindo. A bateria é lida uma vez por minuto e quando algum
+dispositivo é conectado. Pelo receptor, o app confere antes se o mouse está acordado, para não ficar
+mandando pedidos a ele. Clique no ícone para abrir; Sair, no menu do ícone, encerra o app.
+
+**Iniciar com o Windows** (na engrenagem ou no menu do ícone) é opcional e vem desligado. Ligado, grava
+`SharkConfig.exe --tray` na chave `Run` do usuário: o app abre só na bandeja e a interface (WebView2) só é
+criada quando você abre a janela.
 
 ## Requisitos
 
@@ -55,6 +65,8 @@ dotnet build -c Release
 | `--page dpi` | abre numa página: `overview`, `performance`, `dpi`, `buttons`, `lighting`, `advanced` |
 | `--list` | lista as coleções HID do PC |
 | `--mouse-probe` | só leitura: abre o X8, lê a memória e lista os avisos (`--verbose` mostra os pacotes) |
+| `--tray` | abre só na bandeja (é o que Iniciar com o Windows usa) |
+| `--render-tray-icon 85 icone.png` | salva o ícone da bandeja de uma porcentagem, para conferir o desenho |
 | `--kb-probe` | só leitura: identifica o teclado e despeja as tabelas (`--verbose` mostra os pacotes) |
 | `--kb-probe --dry-run` | lê o teclado e mostra os pacotes de uma edição de exemplo, sem enviar nenhum |
 | `--kb-probe --write-test rate\|led\|key` | grava uma alteração de teste, confere e restaura o original (com backup) |
@@ -116,13 +128,14 @@ docs/PROTOCOL-KEYBOARD.md  protocolo do teclado documentado
 
 Os dispositivos são detectados sozinhos ao serem conectados (o app reage ao aviso do Windows, sem ficar consultando).
 A engrenagem no canto inferior esquerdo abre a aparência: tema escuro ou claro, transparência da
-janela (fundo acrílico do Windows 11) e a opção de reduzir movimento.
+janela (fundo acrílico do Windows 11), a opção de reduzir movimento e Iniciar com o Windows.
 
 Consumo medido (Windows 11): o processo `SharkConfig.exe` usa cerca de 15 MB de RAM privada; somando
 os processos do WebView2 que desenham a interface (com a GPU ligada, para as animações e o vidro
 ficarem lisos), o total fica entre ~180 MB (sem mouse) e ~225 MB (conectado). CPU parado: ~0%; ao
-minimizar, a interface é suspensa. O app abre uma única janela: executá-lo de novo só traz a janela
-aberta para a frente.
+minimizar ou fechar para a bandeja, a interface é suspensa. Iniciado só na bandeja (`--tray`), sem a
+interface, o processo ocupa ~45 MB. O app abre uma única janela: executá-lo de novo só traz a janela
+para a frente (inclusive da bandeja).
 
 ## Licença
 
