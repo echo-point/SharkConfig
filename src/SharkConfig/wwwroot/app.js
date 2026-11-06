@@ -151,14 +151,17 @@ function updateLeds() {
 // ---------------- shell ----------------
 // só troca o HTML quando ele muda: a barra lateral é igual em quase todo render (sem refazer DOM, imagem e foco)
 const setHTML = (el, html) => { if (el._html !== html) { el.innerHTML = html; el._html = html; } };
-const KB_GLYPH = `<svg class="kb-glyph" viewBox="0 0 34 40" aria-hidden="true"><rect x="1" y="11" width="32" height="18" rx="3.5"/><path d="M6 17h2M11 17h2M16 17h2M21 17h2M26 17h2M9 23h16"/></svg>`;
+// bateria no estilo do iPhone: cápsula com o número dentro, preenchida até o nível, e o polo à direita
+const batteryGlyph = (p) => `<div class="ios-battery ${p <= 20 ? "low" : ""}" style="--lvl:${Math.max(0, Math.min(100, p))}%" role="img" aria-label="Bateria ${p}%">
+  <span>${p}</span><i></i></div>`;
+const KB_GLYPH =`<svg class="kb-glyph" viewBox="0 0 34 40" aria-hidden="true"><rect x="1" y="11" width="32" height="18" rx="3.5"/><path d="M6 17h2M11 17h2M16 17h2M21 17h2M26 17h2M9 23h16"/></svg>`;
 function renderRail() {
   const d = S.device, bat = d?.battery, kb = S.kind === "keyboard";
   setHTML($("#device"), `
     ${kb ? KB_GLYPH : `<img src="${photoSrc()}" alt="">`}
     <div><div class="device-name">${kb ? esc(d?.name ?? "Teclado") : "X8 Ultra"}</div>
       <div class="device-status"><i class="dot ${d ? "on" : ""}"></i>${!d ? "Desconectado" : kb ? "Cabo USB" : viaDongle() ? "Receptor 8K" : "Cabo USB"}</div></div>
-    ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`);
+    ${bat ? batteryGlyph(bat.percent) : ""}`);
   // navegação: estrutura fixa; só o estado muda (o botão focado continua o mesmo elemento)
   const P = pagesNow(), I = iconsNow();
   setHTML($("#nav"), Object.entries(P).map(([key, p]) => `
@@ -562,6 +565,9 @@ document.addEventListener("click", (e) => {
 $("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme-choice]"); if (b) changeAppearance({ theme: b.dataset.themeChoice }); });
 $("#transparency").addEventListener("input", (e) => changeAppearance({ transparency: Number(e.target.value) }));
 $("#reduce-motion").addEventListener("change", (e) => changeAppearance({ reduceMotion: e.target.checked }));
+// Iniciar com o Windows (chave Run do usuário); o C# devolve o estado real depois de gravar
+$("#startup").addEventListener("change", (e) => bridge.call("setStartup", e.target.checked)
+  .then((on) => { e.target.checked = !!on; }).catch((err) => { e.target.checked = !e.target.checked; toast(err.message, true); }));
 $("#settings-done").addEventListener("click", () => closeModal("#settings"));
 // clicar fora do painel fecha
 $$(".modal").forEach((m) => m.addEventListener("pointerdown", (e) => { if (e.target === m) closeModal("#" + m.id); }));
@@ -570,6 +576,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMod
 bridge.on("progress", (m) => { $("#progress").classList.add("on"); $("#progress i").style.setProperty("--p", m.value / 100); });
 bridge.on("device", (m) => m.state ? loadState(m.state) : deviceGone());
 bridge.on("notice", (m) => toast(m.text, true));
+// leitura periódica da bateria (bandeja): atualiza a bateria da barra lateral
+bridge.on("battery", (m) => { if (S.device && S.kind === "mouse") { S.device.battery = m.battery; renderRail(); } });
 // o Windows avisou que algo entrou ou saiu: atualiza os cartões da tela inicial
 bridge.on("available", (m) => { S.avail = { mouse: m.mouse, keyboard: m.keyboard }; if (!S.cfg) render(); });
 bridge.on("log", (m) => {
@@ -584,6 +592,7 @@ bridge.on("log", (m) => {
   const q = new URLSearchParams(location.search);
   try { S.opt = await bridge.call("init"); } catch { S.opt = null; }
   if (S.opt?.appearance) { appearance = S.opt.appearance; }
+  $("#startup").checked = !!S.opt?.startup;
   applyAppearance(appearance);
   if (q.get("page") && PAGES[q.get("page")]) S.page = q.get("page");
   render();

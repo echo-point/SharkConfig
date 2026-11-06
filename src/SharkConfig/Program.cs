@@ -14,6 +14,14 @@ static class Program
             foreach (var d in WinHid.Enumerate()) Console.WriteLine($"{d}\n    {d.Path}");
             return 0;
         }
+        if (args.Length >= 3 && args[0] == "--render-tray-icon")
+        {
+            // salva o ícone da bandeja de uma porcentagem como PNG (para conferir o desenho)
+            using var ico = UI.TrayBattery.Render(int.Parse(args[1]));
+            using var bmp = ico.ToBitmap();
+            bmp.Save(args[2], System.Drawing.Imaging.ImageFormat.Png);
+            return 0;
+        }
         if (args.Contains("--mouse-probe"))
         {
             // só leitura: abre o X8 e lê a memória com o registro de pacotes
@@ -92,8 +100,10 @@ static class Program
         // Instância única: o WebView2 de duas janelas disputaria a mesma pasta de dados (e o mesmo mouse).
         // A segunda execução só traz a janela que já existe para a frente e sai.
         using var single = new Mutex(true, @"Local\SharkConfig.InstanciaUnica", out bool first);
+        bool tray = args.Contains("--tray");   // Iniciar com o Windows: começa só na bandeja
         if (!first)
         {
+            if (tray) return 0;             // já está rodando: a partida automática não abre a janela
             AllowSetForegroundWindow(-1);   // ASFW_ANY: deixa a outra instância vir para a frente
             PostMessage((IntPtr)0xFFFF, UI.HostForm.ShowWindowMessage, 0, 0);   // HWND_BROADCAST
             return 0;
@@ -101,7 +111,7 @@ static class Program
         ApplicationConfiguration.Initialize();
         // --page overview|performance|dpi|buttons|lighting|advanced
         var page = args.SkipWhile(a => a != "--page").Skip(1).FirstOrDefault();
-        Application.Run(new UI.HostForm(page));
+        Application.Run(new UI.HostForm(page, tray));
         return 0;
     }
 

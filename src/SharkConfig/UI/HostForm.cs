@@ -17,7 +17,15 @@ public sealed class HostForm : Form
     readonly System.Windows.Forms.Timer _deviceDebounce = new() { Interval = 500 };
     readonly string _query;
     readonly AppSettings _settings = AppSettings.Load();
-    Bridge? _bridge;
+    readonly Bridge _bridge;
+
+    // bandeja: fechar a janela só a esconde; o ícone mostra a bateria do mouse (lida a cada minuto)
+    readonly NotifyIcon _tray = new() { Text = "SharkConfig" };
+    readonly ToolStripMenuItem _startupItem = new("Iniciar com o Windows") { CheckOnClick = true };
+    readonly System.Windows.Forms.Timer _batteryTimer = new() { Interval = 60_000 };
+    readonly Icon _appIcon;
+    Icon? _batteryIcon;
+    bool _allowShow, _exiting, _trayHintShown;
 
     /// <summary>Mensagem que a segunda execução do app manda (broadcast) para esta janela vir para a frente.</summary>
     public static readonly int ShowWindowMessage = RegisterWindowMessage("SharkConfig.MostrarJanela");
@@ -35,11 +43,15 @@ public sealed class HostForm : Form
         "AutofillServerCommunication,OptimizationHints,Translate,MediaRouter,BackForwardCache " +
         "--js-flags=--max-old-space-size=48";
 
-    public HostForm(string? startPage)
+    /// <param name="startInTray">--tray (Iniciar com o Windows): começa só na bandeja; a interface
+    /// (WebView2) só é criada quando a janela é aberta pela primeira vez.</param>
+    public HostForm(string? startPage, bool startInTray = false)
     {
         Text = "SharkConfig";
+        _allowShow = !startInTray;
         using (var ico = typeof(HostForm).Assembly.GetManifestResourceStream("SharkConfig.app.ico"))
-            if (ico is not null) Icon = new Icon(ico);   // multi-tamanho: o Windows escolhe 16/20/24 (título) e 32/40/48 (barra)
+            _appIcon = ico is not null ? new Icon(ico) : SystemIcons.Application;
+        Icon = _appIcon;   // multi-tamanho: o Windows escolhe 16/20/24 (título) e 32/40/48 (barra)
         BackColor = Color.Black;            // preto = área por onde o fundo acrílico aparece
         MinimumSize = new Size(900, 600);   // abaixo disso a UI escalaria demais
         Size = new Size(1280, 800);
@@ -48,7 +60,104 @@ public sealed class HostForm : Form
         _query = $"?page={Uri.EscapeDataString(startPage ?? "overview")}";
         Load += async (_, _) => await InitAsync();
         Resize += async (_, _) => await OnMinimizeChangedAsync();
-        _deviceDebounce.Tick += (_, _) => { _deviceDebounce.Stop(); _ = _bridge?.OnDevicesChangedAsync(); };
+        // a ponte existe desde o início (a bandeja lê a bateria mesmo sem a interface aberta)
+        _bridge = new Bridge(
+            json => { if (IsHandleCreated && !IsDisposed) BeginInvoke(() => _web.CoreWebView2?.PostWebMessageAsJson(json)); },
+            f => (string?)Invoke(f),
+            _settings,
+            s => BeginInvoke(() => ApplyAppearance(s)));
+        _deviceDebounce.Tick += async (_, _) => { _deviceDebounce.Stop(); await _bridge.OnDevicesChangedAsync(); await UpdateBatteryAsync(); };
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Abrir o SharkConfig", null, (_, _) => ShowFromTray());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_startupItem);
+        menu.Items.Add("Sair", null, (_, _) => ExitApp());
+        menu.Opening += (_, _) => _startupItem.Checked = Startup.IsEnabled;
+        _startupItem.CheckedChanged += (_, _) => { if (_startupItem.Checked != Startup.IsEnabled) Startup.Set(_startupItem.Checked); };
+        _tray.ContextMenuStrip = menu;
+        _tray.Icon = _appIcon;
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowFromTray(); };
+        _tray.Visible = true;
+        _batteryTimer.Tick += async (_, _) => await UpdateBatteryAsync();
+        _batteryTimer.Start();
+        Shown += async (_, _) => await UpdateBatteryAsync();
+        Startup.Refresh();
+        if (startInTray) { CreateHandle(); _ = StartTrayAsync(); }
+    }
+
+    async Task StartTrayAsync() { await Task.Delay(1500); await UpdateBatteryAsync(); }
+
+    /// <summary>Na partida pela bandeja a janela fica escondida até o usuário abri-la.</summary>
+    protected override void SetVisibleCore(bool value)
+    {
+        if (!_allowShow) { value = false; if (!IsHandleCreated) CreateHandle(); }
+        base.SetVisibleCore(value);
+    }
+
+    public void ShowFromTray()
+    {
+        _allowShow = true;
+        if (!Visible) Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Resume();
+        Activate();
+        SetForegroundWindow(Handle);
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        // o X esconde na bandeja; Sair (menu da bandeja) e o desligamento do Windows encerram
+        if (!_exiting && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            _ = SuspendAsync();
+            if (!_trayHintShown)
+            {
+                _trayHintShown = true;
+                _tray.ShowBalloonTip(3000, "SharkConfig continua na bandeja",
+                    "A bateria do mouse aparece no ícone. Clique nele para abrir, ou use Sair no menu para fechar.", ToolTipIcon.None);
+            }
+            return;
+        }
+        base.OnFormClosing(e);
+    }
+
+    void ExitApp()
+    {
+        _exiting = true;
+        _batteryTimer.Stop();
+        _tray.Visible = false;
+        Close();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { _tray.Dispose(); _batteryIcon?.Dispose(); _batteryTimer.Dispose(); }
+        base.Dispose(disposing);
+    }
+
+    /// <summary>Lê a bateria e atualiza o ícone e a dica da bandeja.</summary>
+    async Task UpdateBatteryAsync()
+    {
+        if (_exiting) return;
+        Bridge.BatteryStatus st;
+        try { st = await _bridge.PollBatteryAsync(); } catch { return; }
+        string tip;
+        Icon icon;
+        if (!st.Present) { tip = "SharkConfig: nenhum mouse conectado"; icon = _appIcon; }
+        else if (st.Percent is int p)
+        {
+            tip = st.Asleep ? $"X8 Ultra: {p}% (dormindo, última leitura)" : $"X8 Ultra: {p}%{(st.Wireless ? "" : " (cabo)")}";
+            icon = TrayBattery.Render(p);
+        }
+        else { tip = st.Asleep ? "X8 Ultra dormindo: mexa no mouse para ler a bateria" : "X8 Ultra: bateria indisponível"; icon = _appIcon; }
+        var old = _batteryIcon;
+        _tray.Icon = icon;
+        _batteryIcon = ReferenceEquals(icon, _appIcon) ? null : icon;
+        if (old is not null && !ReferenceEquals(old, icon)) old.Dispose();
+        _tray.Text = tip.Length > 127 ? tip[..127] : tip;
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -95,8 +204,9 @@ public sealed class HostForm : Form
         if (m.Msg == 0x0219) { _deviceDebounce.Stop(); _deviceDebounce.Start(); }
         if (m.Msg == ShowWindowMessage && ShowWindowMessage != 0)
         {
-            ShowWindow(Handle, IsIconic(Handle) ? 9 : 5);   // SW_RESTORE (volta ao tamanho de antes) | SW_SHOW
-            SetForegroundWindow(Handle);
+            // outra execução do app pediu a janela (inclusive com ela escondida na bandeja)
+            if (!Visible) ShowFromTray();
+            else { ShowWindow(Handle, IsIconic(Handle) ? 9 : 5); SetForegroundWindow(Handle); }   // SW_RESTORE | SW_SHOW
             return;
         }
         base.WndProc(ref m);
@@ -146,11 +256,6 @@ public sealed class HostForm : Form
         core.SetVirtualHostNameToFolderMapping("sharkconfig.local",
             Path.Combine(AppContext.BaseDirectory, "wwwroot"), CoreWebView2HostResourceAccessKind.Allow);
 
-        _bridge = new Bridge(
-            json => BeginInvoke(() => core.PostWebMessageAsJson(json)),
-            f => (string?)Invoke(f),
-            _settings,
-            s => BeginInvoke(() => ApplyAppearance(s)));
         core.WebMessageReceived += (_, e) => _ = _bridge.HandleAsync(e.WebMessageAsJson);
         core.Navigate("https://sharkconfig.local/index.html" + _query);
     }
@@ -158,23 +263,29 @@ public sealed class HostForm : Form
     bool _suspended;
     async Task OnMinimizeChangedAsync()
     {
+        if (WindowState == FormWindowState.Minimized) await SuspendAsync();
+        else if (Visible) Resume();
+    }
+
+    /// <summary>Minimizado ou escondido na bandeja: congela scripts/render e devolve memória ao sistema.</summary>
+    async Task SuspendAsync()
+    {
         var core = _web.CoreWebView2;
-        if (core is null) return;
-        if (WindowState == FormWindowState.Minimized && !_suspended)
-        {
-            // minimizado: congela scripts/render e devolve memória ao sistema
-            _suspended = true;
-            core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
-            _web.Visible = false;
-            try { await core.TrySuspendAsync(); } catch { /* ocupado: tenta no próximo minimizar */ }
-            EmptyWorkingSet(Environment.ProcessId);
-        }
-        else if (WindowState != FormWindowState.Minimized && _suspended)
-        {
-            _suspended = false;
-            _web.Visible = true;   // retomar é automático ao ficar visível
-            core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
-        }
+        if (core is null || _suspended) return;
+        _suspended = true;
+        core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+        _web.Visible = false;
+        try { await core.TrySuspendAsync(); } catch { /* ocupado: tenta na próxima vez */ }
+        EmptyWorkingSet(Environment.ProcessId);
+    }
+
+    void Resume()
+    {
+        var core = _web.CoreWebView2;
+        if (core is null || !_suspended) return;
+        _suspended = false;
+        _web.Visible = true;   // retomar é automático ao ficar visível
+        core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
     }
 
     static void EmptyWorkingSet(int pid)
