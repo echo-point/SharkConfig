@@ -105,6 +105,28 @@ grava em 0x1B00 + 6i: raw_lo raw_hi raw_lo raw_hi flag chk
 Leitura usada pelo SharkConfig: `dpi = (raw + 1) × (flag & 1 ? 2 : 1)` [I] — os bits altos do flag
 recebem o valor acima e não são confiáveis para decodificar.
 
+### DPI no formato antigo (`0x0C + 4i`) [H]
+
+Um X8 com firmware 3.00 pelo receptor (MID 0) deixa a tabela `0x1B00` **toda apagada (`FF`)** e guarda o
+DPI só no registro legado: `[X baixo, Y baixo, flag, chk]`, em unidades de **50 DPI**, com os bits altos
+em `flag` (bits 2–3) e o divisor 2 no bit 0:
+
+```
+dpi = ((lo | ((flag >> 2) & 3) << 8) + 1) × 50 × (flag & 1 ? 2 : 1)
+lido: 0F 0F 00 → 800 · 2F → 2400 · 3F → 3200 · 6F → 5600 · 9F → 8000 · A3 A3 55 → 42.000
+```
+
+Quando a tabela nova está apagada, o SharkConfig lê o DPI daqui e o deixa **só para leitura**. Antes
+disso, a leitura acusava "DPI inválido" em todos os estágios e o app recusava qualquer gravação. A
+gravação também regravava os 8 registros de `0x1B00` sempre que algum deles fosse inválido; agora o DPI só é
+gravado quando o valor muda.
+
+### Mouse dormindo
+
+Pelo receptor, o comando `0x03` responde `resp[6] = 01` com o mouse ligado e `00` com ele dormindo ou
+desligado [H]. Nesse estado o receptor ainda responde `0x03` e `0xF1`, mas `0x04`, `0x08` e `0x12` ficam
+sem resposta. O SharkConfig confere isso antes de ler a memória e pede para mexer no mouse.
+
 ### Botões
 
 Registro `[tipo, p1, p2, chk]`:

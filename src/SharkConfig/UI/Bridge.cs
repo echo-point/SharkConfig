@@ -81,7 +81,7 @@ public sealed class ConfigDto
 /// Ponte JS ↔ C#. Mensagens: { id, cmd, args } → { id, ok, result | error }.
 /// Eventos empurrados: { event: "log" | "progress", ... }.
 /// </summary>
-public sealed class Bridge
+public sealed partial class Bridge
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     readonly Action<string> _post;
@@ -131,40 +131,99 @@ public sealed class Bridge
 
         object? Check()
         {
+            if (_dev is not null)
             {
-                if (_dev is not null)
-                {
-                    bool present = _dev.DevicePath is null ||
-                        WinHid.Enumerate(WinHid.AttackSharkVid).Any(d => string.Equals(d.Path, _dev.DevicePath, StringComparison.OrdinalIgnoreCase));
-                    if (present) return null;
-                    Log("Mouse desconectado.");
-                    _dev.Dispose(); _dev = null; _model = null;
-                    return new { @event = "device", state = (object?)null };
-                }
-                var state = TryAutoConnect();
-                return state is null ? null : new { @event = "device", state };
+                bool present = _dev.DevicePath is null ||
+                    WinHid.Enumerate(WinHid.AttackSharkVid).Any(d => string.Equals(d.Path, _dev.DevicePath, StringComparison.OrdinalIgnoreCase));
+                if (present) return Available();
+                Log("Mouse desconectado.");
+                _dev.Dispose(); _dev = null; _model = null;
+                return new { @event = "device", state = (object?)null };
             }
+            if (_kb is not null)
+            {
+                bool present = _kb.DevicePath is null ||
+                    WinHid.Enumerate(WinHid.KeyboardVid).Any(d => string.Equals(d.Path, _kb.DevicePath, StringComparison.OrdinalIgnoreCase));
+                if (present) return Available();
+                Log("Teclado desconectado.");
+                _kb.Dispose(); _kb = null;
+                return new { @event = "device", state = (object?)null };
+            }
+            // nada aberto: só atualiza a tela inicial (o usuário escolhe em qual dispositivo entrar)
+            return Available();
         }
     }
 
-    /// <summary>Tenta abrir o X8 sem incomodar o usuário: sem mouse, retorna null em silêncio.</summary>
-    object? TryAutoConnect()
+    /// <summary>
+    /// O que está ligado agora, para a tela inicial. Só enumera o Windows: não abre nem fala com
+    /// nenhum dispositivo. mouse: null (ausente), "cable" ou "dongle".
+    /// </summary>
+    object Available()
+    {
+        var m = WinHid.FindMouse(WinHid.Enumerate(WinHid.AttackSharkVid));
+        return new
+        {
+            @event = "available",
+            mouse = m is null ? null : WinHid.IsWirelessPid(m.Value.Out.Pid) ? "dongle" : "cable",
+            keyboard = WinHid.FindKeyboard(WinHid.Enumerate(WinHid.KeyboardVid)) is not null,
+            open = _dev is not null ? "mouse" : _kb is not null ? "keyboard" : null,
+        };
+    }
+
+    /// <summary>Fecha o dispositivo aberto e volta para a tela inicial.</summary>
+    object Disconnect()
+    {
+        _dev?.Dispose(); _dev = null; _model = null;
+        _kb?.Dispose(); _kb = null;
+        return Available();
+    }
+
+    /// <summary>Fecha o que estiver aberto e abre o dispositivo escolhido ("mouse" ou "keyboard").</summary>
+    object? SwitchTo(string kind)
+    {
+        Disconnect();
+        return (kind == "keyboard" ? TryAutoConnectKeyboard() : TryAutoConnectMouse())
+               ?? throw new InvalidOperationException(kind == "keyboard"
+                   ? "Nenhum X68 HE encontrado. Conecte o teclado pelo cabo."
+                   : "Nenhum X8 encontrado. Conecte o receptor 8K ou o cabo do mouse.");
+    }
+
+    /// <summary>Recarrega o dispositivo que já está aberto (ou null se nenhum está).</summary>
+    object? TryAutoConnect() => _kb is not null ? KbRead() : _dev is not null ? Read() : null;
+
+    object? TryAutoConnectMouse()
     {
         if (_dev is not null) return Read();
         if (WinHid.FindMouse(WinHid.Enumerate(WinHid.AttackSharkVid)) is null) return null;
+        MouseDevice? dev = null;
         try
         {
-            var dev = MouseDevice.TryOpenReal(out var message);
+            dev = MouseDevice.TryOpenReal(out var message);
             if (dev is null) return null;
             Log(message);
-            return Connect(dev);
+            // Pelo receptor, o mouse pode estar dormindo, desligado ou sem bateria: o receptor responde
+            // (0x03, 0xF1), mas os pedidos que vão até o mouse ficam sem resposta.
+            // A versão (0x12) desempata caso o byte de "online" não signifique o que parece.
+            if (dev.Description.Contains("dongle") && dev.ReadOnline() == false && dev.ReadVersion() is null)
+                throw new MouseAsleepException();
+            var d = dev; dev = null;
+            return Connect(d);
+        }
+        catch (MouseAsleepException)
+        {
+            dev?.Dispose();
+            throw new InvalidOperationException("O receptor 8K está conectado, mas o mouse não responde. Ligue o mouse ou mexa nele para acordá-lo, " +
+                "e confira a bateria. Depois clique no mouse de novo.");
         }
         catch (Exception ex)
         {
+            dev?.Dispose();
             _dev?.Dispose(); _dev = null;
-            throw new InvalidOperationException("O X8 foi encontrado, mas não respondeu. Feche o app oficial da Attack Shark e reconecte o mouse. (" + ex.Message + ")");
+            throw new InvalidOperationException("O X8 foi encontrado, mas não respondeu. Feche o app oficial da Attack Shark, mexa no mouse para acordá-lo e tente de novo. (" + ex.Message + ")");
         }
     }
+
+    sealed class MouseAsleepException : Exception;
 
     object SetAppearance(JsonNode? args)
     {
@@ -195,16 +254,21 @@ public sealed class Bridge
         "init" => Init(),
         "connectReal" => ConnectReal(),
         "autoConnect" => TryAutoConnect(),
+        "available" => Available(),
+        "disconnect" => Disconnect(),
+        "switchTo" => SwitchTo(args?.GetValue<string>() ?? "mouse"),
         "setAppearance" => SetAppearance(args),
-        "read" => Read(),
-        "preview" => Preview(Dto(args)),
-        "apply" => Apply(Dto(args)),
-        "exportBackup" => _dev?.Image is { } img ? MouseDevice.SaveBackup(img, _backupDir) : throw new InvalidOperationException("Leia o mouse antes de exportar."),
-        "importBackup" => ImportBackup(),
+        "read" => _kb is not null ? KbRead() : Read(),
+        "preview" => _kb is not null ? KbPreview(KbDto(args)) : Preview(Dto(args)),
+        "apply" => _kb is not null ? KbApply(KbDto(args)) : Apply(Dto(args)),
+        "exportBackup" => _kb is not null ? _kb.SaveBackup(_backupDir)
+            : _dev?.Image is { } img ? MouseDevice.SaveBackup(img, _backupDir) : throw new InvalidOperationException("Leia o mouse antes de exportar."),
+        "importBackup" => _kb is not null ? KbImportBackup() : ImportBackup(),
         _ => throw new InvalidOperationException("comando desconhecido: " + cmd),
     };
 
     static ConfigDto Dto(JsonNode? n) => n.Deserialize<ConfigDto>(Json) ?? throw new ArgumentException("config ausente");
+    static KbConfigDto KbDto(JsonNode? n) => n.Deserialize<KbConfigDto>(Json) ?? throw new ArgumentException("config ausente");
 
     object Init() => new
     {
@@ -223,6 +287,7 @@ public sealed class Bridge
         },
         version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
         appearance = _settings,
+        keyboard = KbInit(),
     };
 
     object? ConnectReal()
@@ -257,6 +322,7 @@ public sealed class Bridge
 
     object State(MouseConfig cfg, FlashImage img) => new
     {
+        kind = "mouse",
         device = new
         {
             description = _dev!.Description,

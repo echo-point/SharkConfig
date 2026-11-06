@@ -1,5 +1,5 @@
 "use strict";
-// SharkConfig v0.3 — interface. Fala com C# (UI/Bridge.cs) via WebView2 postMessage.
+// SharkConfig v0.4 — interface. Fala com C# (UI/Bridge.cs) via WebView2 postMessage.
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -43,8 +43,14 @@ const bridge = (() => {
 })();
 
 // ---------------- estado ----------------
-const S = { opt: null, device: null, cfg: null, saved: null, warnings: [], hex: "", page: "overview", btn: 0, busy: false, logs: [],
-  model: Number(store.get("model") ?? 0) };
+// kind: "mouse" (X8) ou "keyboard" (X68 HE, páginas em kb.js); avail: o que está ligado para trocar
+const S = { opt: null, kind: "mouse", device: null, cfg: null, saved: null, warnings: [], hex: "", page: "overview", btn: 0, busy: false, logs: [],
+  keys: [], avail: { mouse: false, keyboard: false }, model: Number(store.get("model") ?? 0) };
+const pagesNow = () => (S.kind === "keyboard" ? KB_PAGES : PAGES);
+const viewsNow = () => (S.kind === "keyboard" ? KB_VIEWS : VIEWS);
+const bindNow = () => (S.kind === "keyboard" ? KB_BIND : BIND);
+const iconsNow = () => (S.kind === "keyboard" ? KB_ICON : ICON);
+const devNoun = () => (S.kind === "keyboard" ? "teclado" : "mouse");
 
 // Fotos oficiais (Picture/Buttoninterface/mouse{i}.png, 432×356). Posições em % da imagem.
 // Fotos oficiais (Picture/Buttoninterface/mouse{i}.png) recortadas para 202×356 (x 115–317 do original 432×356).
@@ -89,7 +95,7 @@ const GEAR = (() => {
 })();
 const gearButton = () => `<button class="gear" data-settings aria-label="Aparência" title="Aparência">${GEAR}</button>`;
 
-const stageColor = () => S.cfg ? S.cfg.colors[S.cfg.currentStage] : "#0A84FF";
+const stageColor = () => S.cfg?.colors ? S.cfg.colors[S.cfg.currentStage] : "#0A84FF";
 const hz = (code) => S.opt?.pollingRates.find((p) => p.code === code)?.hz ?? 0;
 const photoSrc = () => `img/mouse${S.model}.png`;
 const viaDongle = () => /dongle/.test(S.device.description);
@@ -145,35 +151,43 @@ function updateLeds() {
 // ---------------- shell ----------------
 // só troca o HTML quando ele muda: a barra lateral é igual em quase todo render (sem refazer DOM, imagem e foco)
 const setHTML = (el, html) => { if (el._html !== html) { el.innerHTML = html; el._html = html; } };
+const KB_GLYPH = `<svg class="kb-glyph" viewBox="0 0 34 40" aria-hidden="true"><rect x="1" y="11" width="32" height="18" rx="3.5"/><path d="M6 17h2M11 17h2M16 17h2M21 17h2M26 17h2M9 23h16"/></svg>`;
 function renderRail() {
-  const d = S.device, bat = d?.battery;
+  const d = S.device, bat = d?.battery, kb = S.kind === "keyboard";
   setHTML($("#device"), `
-    <img src="${photoSrc()}" alt="">
-    <div><div class="device-name">X8 Ultra</div>
-      <div class="device-status"><i class="dot ${d ? "on" : ""}"></i>${d ? (viaDongle() ? "Receptor 8K" : "Cabo USB") : "Desconectado"}</div></div>
+    ${kb ? KB_GLYPH : `<img src="${photoSrc()}" alt="">`}
+    <div><div class="device-name">${kb ? esc(d?.name ?? "Teclado") : "X8 Ultra"}</div>
+      <div class="device-status"><i class="dot ${d ? "on" : ""}"></i>${!d ? "Desconectado" : kb ? "Cabo USB" : viaDongle() ? "Receptor 8K" : "Cabo USB"}</div></div>
     ${bat ? `<div class="battery ${bat.percent <= 20 ? "low" : ""}"><div class="bar"><i style="width:${bat.percent}%"></i></div>${bat.percent}%</div>` : ""}`);
   // navegação: estrutura fixa; só o estado muda (o botão focado continua o mesmo elemento)
-  setHTML($("#nav"), Object.entries(PAGES).map(([key, p]) => `
-    <button data-page="${key}"><svg viewBox="0 0 24 24"><path d="${ICON[key]}"/></svg>${p.title}</button>`).join(""));
+  const P = pagesNow(), I = iconsNow();
+  setHTML($("#nav"), Object.entries(P).map(([key, p]) => `
+    <button data-page="${key}"><svg viewBox="0 0 24 24"><path d="${I[key]}"/></svg>${p.title}</button>`).join(""));
   $$("#nav [data-page]").forEach((b) => {
     const key = b.dataset.page;
     if (S.page === key) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     b.disabled = !S.cfg && key !== "overview" && key !== "advanced";
   });
-  setHTML($("#rail-foot"), `${d ? '<button class="btn block" id="reread">Ler o mouse de novo</button>' : ""}
+  // Início: fecha o dispositivo e volta à tela de escolha (mouse ou teclado)
+  setHTML($("#rail-foot"), `${d ? `<button class="btn block plain" id="go-home">Início</button>` : ""}
+    ${d ? `<button class="btn block" id="reread">Ler o ${devNoun()} de novo</button>` : ""}
     <div class="foot-row"><small>${d?.firmware ? `Firmware ${d.firmware}` : `SharkConfig ${S.opt?.version ?? ""}`}</small>${gearButton()}</div>`);
+  $("#apply").textContent = `Aplicar no ${devNoun()}`;
+  $("#sheet-title").textContent = `Aplicar no ${devNoun()}`;
 }
 
 function render() {
-  // sem mouse: tela de conexão (sem barra lateral nem cabeçalho); com mouse: layout normal
+  // sem dispositivo: tela de conexão (sem barra lateral nem cabeçalho); com dispositivo: layout normal
   document.body.classList.toggle("no-device", !S.cfg);
+  const P = pagesNow();
+  if (!P[S.page]) S.page = "overview";
   const page = S.cfg ? S.page : "overview";
-  $("#title").textContent = PAGES[page].title;
-  $("#subtitle").textContent = PAGES[page].sub();
+  $("#title").textContent = P[page].title;
+  $("#subtitle").textContent = P[page].sub();
   renderRail();
   const view = $("#view");
-  view.innerHTML = VIEWS[page]();
-  BIND[page]?.(view);
+  view.innerHTML = viewsNow()[page]();
+  bindNow()[page]?.(view);
   refreshChanges();
 }
 
@@ -212,10 +226,8 @@ const OUT = { debounce: (v) => `${v} ms`, ledBrightness: (v) => `${v} de 10`, le
 // ---------------- páginas ----------------
 const VIEWS = {
   overview() {
-    // sem mouse: só o título; a conexão é automática assim que o Windows avisar que ele chegou
-    if (!S.cfg) return `<div class="connect">
-      <div class="empty"><h2>Conecte o seu X8</h2></div>
-      <div class="stage">${photo()}</div>${gearButton()}</div>`;
+    // sem dispositivo aberto: tela inicial para escolher o mouse ou o teclado (kb.js)
+    if (!S.cfg) return chooser();
     // Visão geral é só informativa: nada aqui altera a configuração.
     const c = S.cfg, d = S.device;
     return `<div class="overview">
@@ -400,12 +412,17 @@ async function run(fn) {
 
 function loadState(st) {
   $("#progress").classList.remove("on");   // leitura terminou (também na conexão automática)
-  const arriving = !S.cfg;
+  const arriving = !S.cfg || S.kind !== (st.kind ?? "mouse");
   const apply = () => {
+    if (S.kind !== (st.kind ?? "mouse")) { S.keys = []; S.page = "overview"; }
+    S.kind = st.kind ?? "mouse";
     S.device = st.device; S.cfg = st.config; S.warnings = st.warnings; S.hex = st.hex;
-    S.cfg.colors = S.cfg.colors.map((x) => x.toUpperCase());
-    S.saved = clone(S.cfg);
+    if (S.cfg?.colors) S.cfg.colors = S.cfg.colors.map((x) => x.toUpperCase());
+    if (S.cfg?.ledColor) S.cfg.ledColor = S.cfg.ledColor.toUpperCase();
+    S.saved = S.cfg ? clone(S.cfg) : null;
+    if (S.kind === "keyboard" && !S.cfg) toast(`${st.device.name}: modelo ainda não suportado.`, true);
     if (st.device.model != null && store.get("model") == null) S.model = st.device.model; // foto pelo MID do mouse
+    bridge.call("available").then((a) => { S.avail = a; renderRail(); }).catch(() => {});
     if (arriving) S.page = "overview";
     render();
   };
@@ -415,7 +432,8 @@ function loadState(st) {
 
 function deviceGone() {
   closeModal("#sheet");
-  transition(() => { S.device = S.cfg = S.saved = null; S.warnings = []; S.hex = ""; S.page = "overview"; render(); });
+  transition(() => { S.device = S.cfg = S.saved = null; S.warnings = []; S.hex = ""; S.page = "overview"; S.kind = "mouse"; S.keys = []; render(); });
+  bridge.call("available").then((a) => { S.avail = a; if (!S.cfg) render(); }).catch(() => {});
 }
 
 // ---------------- folhas modais com animação (abrir: mola; fechar: rápido) ----------------
@@ -495,7 +513,7 @@ function changeAppearance(patch) {
 async function applyFlow() {
   const ops = await bridge.call("preview", S.cfg);
   if (!ops.length) { S.saved = clone(S.cfg); refreshChanges(); return; }
-  $("#sheet-text").textContent = `${ops.length === 1 ? "1 pacote vai" : ops.length + " pacotes vão"} para a memória do mouse. Antes disso, um backup da configuração atual é salvo.`;
+  $("#sheet-text").textContent = `${ops.length === 1 ? "1 pacote vai" : ops.length + " pacotes vão"} para a memória do ${devNoun()}. Antes disso, um backup da configuração atual é salvo.`;
   $("#sheet-packets").textContent = ops.map((o) => `${o.address}  ${o.bytes}`).join("\n");
   openModal("#sheet", "#sheet-confirm");
 }
@@ -510,7 +528,10 @@ const logLine = (l) => `<div title="${esc(l.text)}"><time>${l.time}</time>${esc(
 // fotos oficiais são opcionais (não vão no repositório): sem elas, usa a silhueta neutra
 document.addEventListener("error", (e) => {
   const img = e.target;
-  if (img.tagName === "IMG" && !img.src.endsWith("placeholder.svg")) img.src = "img/placeholder.svg";
+  if (img.tagName !== "IMG") return;
+  // foto do teclado ausente: some, e o gabinete fica só com a placa e as teclas (a silhueta é de mouse)
+  if (img.classList.contains("kbd-shot")) { img.hidden = true; return; }
+  if (!img.src.endsWith("placeholder.svg")) img.src = "img/placeholder.svg";
 }, true);
 
 // ---------------- eventos globais ----------------
@@ -524,7 +545,18 @@ $("#apply").addEventListener("click", () => run(applyFlow));
 $("#sheet-cancel").addEventListener("click", () => closeModal("#sheet"));
 $("#sheet-confirm").addEventListener("click", () => {
   closeModal("#sheet");
-  run(async () => { const r = await bridge.call("apply", S.cfg); loadState(r.state); toast(`Aplicado no mouse (${r.count} ${r.count === 1 ? "pacote" : "pacotes"})`); });
+  run(async () => { const r = await bridge.call("apply", S.cfg); loadState(r.state); toast(`Aplicado no ${devNoun()} (${r.count} ${r.count === 1 ? "pacote" : "pacotes"})`); });
+});
+document.addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-open]");
+  if (pick && !pick.disabled) return run(async () => {
+    $("#progress").classList.add("on");
+    loadState(await bridge.call("switchTo", pick.dataset.open));
+  });
+  if (e.target.closest("#go-home")) {
+    if (changeCount() > 0 && !confirm("Há alterações não aplicadas. Voltar ao início e descartá-las?")) return;
+    return run(async () => { S.avail = await bridge.call("disconnect"); deviceGone(); });
+  }
 });
 // aparência
 $("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme-choice]"); if (b) changeAppearance({ theme: b.dataset.themeChoice }); });
@@ -538,6 +570,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMod
 bridge.on("progress", (m) => { $("#progress").classList.add("on"); $("#progress i").style.setProperty("--p", m.value / 100); });
 bridge.on("device", (m) => m.state ? loadState(m.state) : deviceGone());
 bridge.on("notice", (m) => toast(m.text, true));
+// o Windows avisou que algo entrou ou saiu: atualiza os cartões da tela inicial
+bridge.on("available", (m) => { S.avail = { mouse: m.mouse, keyboard: m.keyboard }; if (!S.cfg) render(); });
 bridge.on("log", (m) => {
   S.logs.push(m); if (S.logs.length > 200) S.logs.splice(0, S.logs.length - 200);
   const el = $("#log");
@@ -553,7 +587,7 @@ bridge.on("log", (m) => {
   applyAppearance(appearance);
   if (q.get("page") && PAGES[q.get("page")]) S.page = q.get("page");
   render();
-  // conexão automática: tenta agora; depois o C# avisa sozinho quando o mouse for ligado/desligado
-  try { const st = await bridge.call("autoConnect"); if (st) loadState(st); }
+  // tela inicial: mostra o que está ligado; o C# avisa sozinho quando algo entra ou sai
+  try { S.avail = await bridge.call("available"); render(); }
   catch (e) { toast(e.message, true); }
 })();

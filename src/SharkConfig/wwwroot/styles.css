@@ -248,6 +248,24 @@ body.no-device .rail, body.no-device .head { display: none; }
 .connect { position: relative; display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
 .empty { padding: 34px 0 0; text-align: center; }
 .empty h2 { margin: 0; font: 600 25px/1.15 var(--font-display); letter-spacing: -.018em; }
+.empty p { margin: 6px 0 0; color: var(--pencil); font-size: 13px; }
+
+/* tela inicial: dois cartões, mouse e teclado */
+.home { grid-template-rows: auto 1fr; }
+.picker { display: grid; grid-template-columns: 340px 560px; justify-content: center; align-content: center; gap: 26px; padding-bottom: 40px; }
+.pick { display: grid; grid-template-rows: 330px auto auto; justify-items: center; gap: 4px; padding: 22px 22px 20px; border: 0; border-radius: 22px;
+  background: rgb(var(--surf) / calc(.45 + .28 * var(--opacity))); color: var(--paper);
+  box-shadow: inset 0 0 0 .5px var(--hair), 0 18px 40px -24px var(--shadow);
+  transition: transform .45s var(--spring), box-shadow .25s, background .2s; }
+.pick:hover:not(:disabled) { transform: translateY(-4px) scale(1.012); box-shadow: inset 0 0 0 1px var(--signal), 0 26px 50px -24px var(--shadow); }
+.pick:active:not(:disabled) { transform: scale(.985); }
+.pick:disabled { cursor: default; }
+.pick:disabled .pick-name { color: var(--pencil); }
+.pick-art { position: relative; display: grid; place-items: center; width: 100%; height: 100%; container-type: size; }
+.pick-art .photo { view-transition-name: none; height: min(92cqh, 470px); }
+.pick-art .kbd { view-transition-name: none; width: min(100cqw, calc(80cqh * var(--ar) / (1 + .064 * var(--ar)))); }
+.pick-name { margin-top: 10px; font: 600 19px/1.2 var(--font-display); letter-spacing: -.012em; }
+.pick-status { display: flex; align-items: center; gap: 6px; color: var(--pencil); font-size: 12.5px; }
 
 /* ---------- hotspots ---------- */
 .hs { position: absolute; z-index: 3; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 0; border-radius: 50%;
@@ -306,6 +324,89 @@ body.no-device .rail, body.no-device .head { display: none; }
 .model:hover { background: var(--fill-3); }
 .model[aria-pressed="true"] { background: var(--signal-soft); box-shadow: inset 0 0 0 .5px var(--signal); }
 .acts-row { display: flex; gap: 8px; }
+
+/* ---------- teclado (X68 HE) ---------- */
+.kb-glyph { width: 34px; height: 40px; fill: none; stroke: var(--pencil); stroke-width: 1.5; stroke-linecap: round; }
+/* altura fixa do painel: o desenho não muda de tamanho quando o conteúdo do painel cresce */
+.kb-page { display: grid; grid-template-rows: minmax(0, 1fr) 312px; gap: 14px; height: 100%; min-height: 0; }
+.kb-page.overview-kb { grid-template-rows: minmax(0, 1fr) auto; }
+.overview-kb .fact .k { white-space: nowrap; }
+.kb-page .stage { padding: 8px 4px 0; }
+.inspector.wide { view-transition-name: panel; align-self: stretch; }
+.cols.cols3 { grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.kb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kb-hint { margin: -6px 0 2px !important; }
+.overview-kb .facts.row4 { flex-direction: row; justify-content: center; align-items: flex-end; gap: 56px; width: auto; justify-self: center; padding-bottom: 18px; }
+.overview-kb .fact.big .v { font-size: 40px; }
+
+/* Teclado desenhado como o X68 HE: gabinete preto de borda fina, aba frontal mais escura embaixo, alça
+   no canto superior esquerdo e teclas pretas com legenda branca. É preto nos dois temas, como a foto
+   do mouse é branca nos dois. A largura vem do palco (cq*); a conta de altura soma as bordas (≈ 6,4%). */
+/* Medidas tiradas da foto do produto (gabinete ≈ 491 px): borda 2,4% em cima, 2,2% à direita, ≈ 4% à
+   esquerda (onde fica a alça), 1,2% embaixo + faixa frontal de ≈ 2,9%; cantos pouco arredondados. */
+:root {
+  --case-hi: #1D1E20; --case-lo: #121314; --case-edge: rgba(255,255,255,.09);
+  --plate: #070708; --cap-hi: #1C1D1F; --cap-lo: #131415; --cap-side: #040405; --cap-text: #ECEDEF;
+}
+.kbd { view-transition-name: hero; position: relative; width: min(97cqw, calc(84cqh * var(--ar) / (1 + .062 * var(--ar)))); container-type: inline-size; }
+.kbd-case { position: relative; padding: 2.4% 2.2% 1.4% 4%; border-radius: 1cqw .9cqw .5cqw .5cqw;
+  background: linear-gradient(180deg, var(--case-hi) 0%, var(--case-lo) 100%);
+  box-shadow: inset 0 1px 0 var(--case-edge), inset 0 0 0 .5px rgba(255,255,255,.04),
+    0 2px 0 -1px rgba(0,0,0,.6), 0 28px 40px -26px rgba(0,0,0,.75); }
+.kbd-plate { position: relative; aspect-ratio: var(--ar); border-radius: .4cqw; background: var(--plate);
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.8); }
+/* faixa frontal: barra mais escura por baixo do gabinete, um pouco recuada nas laterais (foto: 1,6%) */
+.kbd-lip { position: absolute; left: 1.6%; right: 1.6%; top: 100%; height: 2.6cqw; border-radius: 0 0 .4cqw .4cqw;
+  background: linear-gradient(180deg, #1A1B1D, #0A0A0B 45%, #121314); box-shadow: inset 0 1px 0 rgba(0,0,0,.8), 0 5px 9px -3px rgba(0,0,0,.75); }
+/* alça: anel cinza alto na borda esquerda, do topo até a 2ª fileira */
+.kbd-loop { position: absolute; left: .8%; top: 4%; width: 2.3cqw; height: 37%; border-radius: .9cqw;
+  border: .45cqw solid #4A4B4F; background: transparent;
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.6), 0 0 0 .5px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12); }
+.kbd-floor { position: absolute; left: 4%; right: 4%; bottom: -4.5%; height: 9%; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--floor), transparent); }
+.kbd.off .kbd-case { filter: grayscale(1) brightness(.8); opacity: .55; }
+.key { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  margin: 0; padding: 0; border: 0; border-radius: clamp(2px, .7cqw, 6px); color: var(--cap-text); text-align: center;
+  font-size: clamp(6px, 1.25cqw, 12px); font-weight: 600; line-height: 1.1; letter-spacing: .01em; white-space: nowrap;
+  background: linear-gradient(180deg, var(--cap-hi), var(--cap-lo));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 .5px rgba(255,255,255,.05), 0 .25cqw 0 var(--cap-side), 0 .45cqw .6cqw rgba(0,0,0,.35);
+  transform: scale(.93); transition: background .15s, box-shadow .2s, transform .25s var(--spring); }
+.key small { color: var(--graphite); font-size: .78em; font-weight: 500; }
+.key.absent { opacity: .35; }
+.key.adv { opacity: .45; }
+button.key:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--cap-hi) 85%, var(--paper)), var(--cap-lo)); }
+button.key:disabled { cursor: not-allowed; }
+.key.rt::after { content: ""; position: absolute; top: 12%; right: 12%; width: 4px; height: 4px; border-radius: 50%; background: var(--caution); }
+.key.sel { background: var(--signal-soft); box-shadow: inset 0 0 0 1.5px var(--signal); transform: scale(.97); }
+.key.sel small { color: var(--paper); }
+/* prévia da iluminação: brilho por tecla na cor do efeito */
+/* barra de espaço: só um traço no centro, como na foto */
+.key.space span::before { content: ""; display: block; width: 3.4cqw; height: .2cqw; border-radius: 1px; background: currentColor; opacity: .9; }
+/* luz por baixo das teclas: aro fino na cor do LED e o brilho vazando para a placa entre as teclas */
+/* com a foto do produto como corpo: a foto ocupa o quadro; a placa e as teclas ficam por cima */
+.kbd.framed { width: min(97cqw, calc(86cqh * var(--ar))); }
+.kbd-frame { position: relative; aspect-ratio: var(--ar); }
+.kbd-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.kbd.framed .kbd-plate { position: absolute; aspect-ratio: auto; border-radius: .35cqw; }
+.kbd.framed .key, .kbd.framed .key.sel { transform: none; }
+.kbd.framed.off .kbd-frame { filter: grayscale(1) brightness(.75); opacity: .55; }
+.kbd.framed .kbd-floor { bottom: -5%; }
+
+/* teclas maiores e mais juntas, como na foto */
+.kbd .key { transform: scale(.965); }
+.kbd .key.sel { transform: scale(.985); }
+/* luz difusa por baixo das teclas: vaza pela folga entre elas e acende as bordas, sem contorno duro */
+.kbd.lit .key { box-shadow: inset 0 1px 0 rgba(255,255,255,.05),
+  0 0 0 .06cqw color-mix(in srgb, var(--kc) calc(55% * var(--bright)), transparent),
+  0 .15cqw calc(.9cqw * var(--bright)) calc(.2cqw * var(--bright)) color-mix(in srgb, var(--kc) calc(85% * var(--bright)), transparent),
+  inset 0 -.25cqw .5cqw -.25cqw color-mix(in srgb, var(--kc) calc(45% * var(--bright)), transparent); }
+/* legendas quase brancas com um toque da cor, como a luz atravessando as teclas na foto */
+.kbd.lit .key span { color: color-mix(in srgb, var(--kc) calc(8% + 12% * var(--bright)), #fff); text-shadow: 0 0 5px color-mix(in srgb, var(--kc) calc(55% * var(--bright)), transparent); }
+.kbd.lit.fx-2 .key { animation: kb-breathe var(--speed) ease-in-out infinite; }
+.kbd.lit:not(.fx-0):not(.fx-1):not(.fx-2) .key { animation: kb-shimmer var(--speed) linear infinite; }
+@keyframes kb-breathe { 0%, 100% { filter: brightness(.55); } 50% { filter: brightness(1.15); } }
+@keyframes kb-shimmer { 0%, 100% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(40deg) brightness(1.1); } }
+.swatch.big { width: 26px; height: 26px; }
 
 /* ---------- vidro flutuante: pílula, folhas, toast ---------- */
 .changes { position: absolute; left: 50%; bottom: 12px; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 16px; border-radius: 999px;
